@@ -1,0 +1,15 @@
+[project]
+name = "filing_analyst"
+version = "0.1.0"
+description = "Ask questions about SEC 10-K filings and get answers with citations."
+requires-python = ">=3.10"
+dependencies = ["beautifulsoup4", "lxml", "numpy", "fastembed", "anthropic", "requests"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["filing_analyst"]
