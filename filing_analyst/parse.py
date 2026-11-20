@@ -71,6 +71,9 @@ def html_to_blocks(html: str) -> list[Block]:
     for t in soup(["script", "style", "head", "ix:header"]):
         t.decompose()
     for t in soup.find_all(style=True):
+        # A tag inside a hidden tag that was already removed is gone too.
+        if t.decomposed:
+            continue
         if _is_hidden(t):
             t.decompose()
 
@@ -115,14 +118,26 @@ def html_to_blocks(html: str) -> list[Block]:
     return out
 
 
+def _heading_text(b: Block) -> str | None:
+    """The text a block would have as a heading. Some filings lay each heading
+    out as a one row table ("Item 1A. | Risk Factors"); its cells are joined
+    back into one line. Multi row tables are never headings."""
+    if b.kind == "text":
+        return b.text
+    if "\n" in b.text:
+        return None
+    return b.text.replace(" | ", " ")
+
+
 def split_sections(blocks: list[Block]) -> list[Section]:
     """Group blocks under their "Item N." headings, skipping the table of
     contents (whose entries are headings with almost nothing after them)."""
     cands: list[tuple[int, str, str]] = []
     for i, b in enumerate(blocks):
-        if b.kind != "text" or len(b.text) > MAX_HEADING_CHARS:
+        heading = _heading_text(b)
+        if heading is None or len(heading) > MAX_HEADING_CHARS:
             continue
-        m = ITEM_RE.match(b.text)
+        m = ITEM_RE.match(heading)
         if not m:
             continue
         item = m.group(1).upper()
@@ -131,14 +146,18 @@ def split_sections(blocks: list[Block]) -> list[Section]:
         title = m.group(2).strip(" .:-–—")
         cands.append((i, item, title))
 
-    sections: list[Section] = []
+    pieces: list[Section] = []
     for n, (start, item, title) in enumerate(cands):
         end = cands[n + 1][0] if n + 1 < len(cands) else len(blocks)
         body = blocks[start + 1:end]
-        sec = Section(item=item, title=title, blocks=body)
-        if sec.words >= MIN_SECTION_WORDS:
-            sections.append(sec)
-    return sections
+        # Some filings repeat "Item 1A" at the top of every page. Back to back
+        # pieces with the same Item are one section; keep the first real title.
+        if pieces and pieces[-1].item == item:
+            pieces[-1].blocks.extend(body)
+            pieces[-1].title = pieces[-1].title or title
+        else:
+            pieces.append(Section(item=item, title=title, blocks=list(body)))
+    return [s for s in pieces if s.words >= MIN_SECTION_WORDS]
 
 
 _FY_RE = re.compile(r"for the (?:fiscal )?year ended\s+([A-Za-z]+\s+\d{1,2}),?\s+(\d{4})", re.I)

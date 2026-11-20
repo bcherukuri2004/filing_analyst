@@ -59,6 +59,46 @@ def test_plain_text_without_block_tags():
     assert [b.text for b in blocks] == ["Item 1. Business", "We make things."]
 
 
+def test_hidden_cell_with_styled_children_does_not_crash():
+    # Seen in a real filing: a hidden table cell whose children also carry a
+    # style. Removing the cell destroys the children, which must then be skipped.
+    html = ('<table><tr><td style="display:none"><span style="font-weight:bold">SECRET</span>'
+            '<span style="color:red">ALSO SECRET</span></td><td>Visible cell</td></tr></table>'
+            '<p style="margin:0">Visible paragraph</p>')
+    blocks = html_to_blocks(html)
+    text = " ".join(b.text for b in blocks)
+    assert "Visible cell" in text and "Visible paragraph" in text
+    assert "SECRET" not in text
+
+
+def test_headings_laid_out_as_one_row_tables():
+    # Seen in a real filing: each heading is a small table, "Item 1A. | Risk Factors".
+    body = "<p>" + "word " * 80 + "</p>"
+    html = ("<table><tr><td>Item 1.</td><td>Business</td><td>3</td></tr>"
+            "<tr><td>Item 1A.</td><td>Risk Factors</td><td>9</td></tr></table>"  # table of contents
+            "<table><tr><td>Item 1.</td><td>Business</td></tr></table>" + body +
+            "<table><tr><td>Item 1A.</td><td>Risk Factors</td></tr></table>" + body +
+            "<table><tr><td>Revenue</td><td>100</td></tr><tr><td>Item 7.</td><td>see below</td></tr></table>")
+    sections = split_sections(html_to_blocks(html))
+    assert [(s.item, s.title) for s in sections] == [("1", "Business"), ("1A", "Risk Factors")]
+    # A multi row data table that merely mentions an Item stays in the body.
+    assert any(b.kind == "table" and "Revenue | 100" in b.text for b in sections[1].blocks)
+
+
+def test_repeated_page_headers_do_not_split_sections():
+    # Seen in a real filing: every page starts with "PART I" / "Item 1A", so the
+    # same Item shows up again and again with no title. It is one section.
+    page = "<p>" + "word " * 80 + "</p>"
+    html = ("<p>Item 1. Business</p>" + page +
+            "<p>PART I</p><p>Item 1</p>" + page +
+            "<p>Item 1A</p><p>ITEM 1A. RISK FACTORS</p>" + page +
+            "<p>PART I</p><p>Item 1A</p>" + page +
+            "<p>PART I</p><p>Item 1A</p>" + page)
+    sections = split_sections(html_to_blocks(html))
+    assert [(s.item, s.title) for s in sections] == [("1", "Business"), ("1A", "RISK FACTORS")]
+    assert sections[0].words >= 160 and sections[1].words >= 240  # no text lost in the merge
+
+
 def test_cross_references_are_not_headings():
     html = ("<p>Item 1A. Risk Factors</p><p>" + "word " * 80 + "see Item 7. for details</p>"
             "<p>As described in Item 1A. Risk Factors above, we face risks.</p>")
