@@ -12,19 +12,26 @@ Endpoints:
     POST /ask      a written answer with checked citations (needs ANTHROPIC_API_KEY)
 
 Settings, read from environment variables when the server starts:
-    FILING_ANALYST_INDEX   index folder (default "index")
-    FILING_ANALYST_RERANK  set to 0 to skip loading the reranker
-    ANTHROPIC_API_KEY      turns on /ask
+    FILING_ANALYST_INDEX           index folder (default "index")
+    FILING_ANALYST_RERANK          set to 0 to skip loading the reranker
+    ANTHROPIC_API_KEY              turns on /ask
+    FILING_ANALYST_API_KEY         if set, /search and /ask need it in an X-API-Key header
+    FILING_ANALYST_ASK_PER_MINUTE  /ask calls allowed per client per minute (default 10)
 """
 from __future__ import annotations
 
+import hmac
 import logging
+import math
 import os
 import threading
+import time
+from collections import deque
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from .answer import LLM, answer_question
@@ -108,6 +115,58 @@ class Health(BaseModel):
     embedder: str | None
     reranker: bool
     ask_enabled: bool
+    auth_required: bool
+
+
+# ------------------------------------------------------------ settings and protection
+
+MIN_KEY_CHARS = 16
+RATE_WINDOW_SECONDS = 60
+
+
+def settings_from_env(env: Mapping[str, str]) -> dict:
+    """Read the protection settings. A bad value stops the server at startup
+    with a clear message, instead of running with protection quietly off."""
+    key = (env.get("FILING_ANALYST_API_KEY") or "").strip() or None  # empty counts as unset
+    if key is not None and len(key) < MIN_KEY_CHARS:
+        raise ValueError(f"FILING_ANALYST_API_KEY must be at least {MIN_KEY_CHARS} characters long")
+    raw = env.get("FILING_ANALYST_ASK_PER_MINUTE", "10").strip()
+    try:
+        per_minute = int(raw)
+    except ValueError:
+        raise ValueError(f"FILING_ANALYST_ASK_PER_MINUTE must be a whole number, got {raw!r}") from None
+    if per_minute < 1:
+        raise ValueError(f"FILING_ANALYST_ASK_PER_MINUTE must be at least 1, got {per_minute}")
+    return {"api_key": key, "ask_per_minute": per_minute}
+
+
+class RateLimiter:
+    """At most `limit` calls per client in any 60 second window. It remembers
+    the time of each client's recent calls and forgets them after a minute.
+    Kept in memory, so it resets when the server restarts and is per process."""
+
+    def __init__(self, limit: int, clock: Callable[[], float]):
+        self.limit = limit
+        self.clock = clock
+        self.calls: dict[str, deque[float]] = {}
+        self.lock = threading.Lock()
+
+    def check(self, client: str) -> None:
+        """Count one call, or raise 429 if the client is over the limit."""
+        with self.lock:
+            now = self.clock()
+            recent = self.calls.setdefault(client, deque())
+            while recent and recent[0] <= now - RATE_WINDOW_SECONDS:
+                recent.popleft()
+            if len(recent) >= self.limit:
+                wait = math.ceil(recent[0] + RATE_WINDOW_SECONDS - now)
+                raise HTTPException(429, f"Too many /ask requests. Limit is {self.limit} per minute.",
+                                    headers={"Retry-After": str(max(1, wait))})
+            recent.append(now)
+            # Forget clients with no recent calls, so the table cannot grow forever.
+            if len(self.calls) > 10_000:
+                for c in [c for c, d in self.calls.items() if not d or d[-1] <= now - RATE_WINDOW_SECONDS]:
+                    del self.calls[c]
 
 
 # ------------------------------------------------------------ the app
@@ -141,11 +200,27 @@ def _load_from_environment(state: _State) -> None:
              store.count(), folder, reranker is not None, state.llm is not None)
 
 
-def create_app(retriever: Retriever | None = None, llm: LLM | None = None) -> FastAPI:
+def create_app(retriever: Retriever | None = None, llm: LLM | None = None, *, api_key: str | None = None,
+               ask_per_minute: int | None = None, clock: Callable[[], float] = time.monotonic) -> FastAPI:
     """Build the app. Tests pass in a small retriever and a fake model; the
-    real server passes nothing and everything is loaded at startup."""
+    real server passes nothing and everything is loaded at startup.
+
+    api_key: when set, /search and /ask require it in the X-API-Key header.
+    ask_per_minute: when set, each client may call /ask this many times a minute.
+    clock: where the rate limit gets the time (tests use a fake one)."""
     state = _State()
     state.retriever, state.llm = retriever, llm
+    limiter = RateLimiter(ask_per_minute, clock) if ask_per_minute else None
+    expected = api_key.encode() if api_key else None
+
+    def require_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
+        if expected is None:
+            return
+        # compare_digest takes the same time however much of the key is right,
+        # so the key cannot be guessed one character at a time by timing replies.
+        if x_api_key is None or not hmac.compare_digest(x_api_key.encode("utf-8", "replace"), expected):
+            raise HTTPException(401, "Missing or wrong API key. Send it in the X-API-Key header.",
+                                headers={"WWW-Authenticate": "X-API-Key"})
     # One database connection and one copy of the models are shared by all
     # requests, which the server runs on several threads at once. The lock lets
     # one search use them at a time. The slow model call in /ask happens
@@ -175,10 +250,10 @@ def create_app(retriever: Retriever | None = None, llm: LLM | None = None) -> Fa
         r = loaded_retriever()
         with lock:
             passages, embedder = r.store.count(), r.store.embedder_name()
-        return Health(status="ok", passages=passages, embedder=embedder,
-                      reranker=r.reranker is not None, ask_enabled=state.llm is not None)
+        return Health(status="ok", passages=passages, embedder=embedder, reranker=r.reranker is not None,
+                      ask_enabled=state.llm is not None, auth_required=expected is not None)
 
-    @app.post("/search", response_model=SearchResponse)
+    @app.post("/search", response_model=SearchResponse, dependencies=[Depends(require_key)])
     def search(req: SearchRequest) -> SearchResponse:
         r = loaded_retriever()
         with lock:
@@ -192,11 +267,15 @@ def create_app(retriever: Retriever | None = None, llm: LLM | None = None) -> Fa
         return SearchResponse(question=req.question, filters=FiltersOut(tickers=filters.tickers, year=filters.year),
                               reranked=req.rerank and r.reranker is not None, results=results)
 
-    @app.post("/ask", response_model=AskResponse)
-    def ask(req: AskRequest) -> AskResponse:
+    @app.post("/ask", response_model=AskResponse, dependencies=[Depends(require_key)])
+    def ask(req: AskRequest, request: Request) -> AskResponse:
+        # By the time this runs, the key and the request body have passed their
+        # checks, so rejected requests never count against the limit.
         if state.llm is None:
             raise HTTPException(503, "Answers are turned off. Set ANTHROPIC_API_KEY and restart the server. "
                                      "/search works without it.")
+        if limiter:
+            limiter.check(request.client.host if request.client else "unknown")
         r = loaded_retriever()
         with lock:
             hits, _ = r.search(req.question, k=req.k)
@@ -216,4 +295,5 @@ def create_app(retriever: Retriever | None = None, llm: LLM | None = None) -> Fa
 
 # What `uvicorn filing_analyst.api:app` runs. Nothing heavy happens here: the
 # index and models load when the server starts, not when this file is imported.
-app = create_app()
+# Bad protection settings fail right here, before the server accepts anything.
+app = create_app(**settings_from_env(os.environ))

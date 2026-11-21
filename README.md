@@ -87,9 +87,13 @@ can be tried from the browser.
 
 | Endpoint | What it does |
 |---|---|
-| `GET /health` | Is the server up, how many passages are loaded, is the reranker loaded, is `/ask` on |
-| `POST /search` | The best matching passages for a question. Free, no API key needed |
-| `POST /ask` | A written answer with checked citations. Needs `ANTHROPIC_API_KEY`; without it, returns 503 |
+| `GET /health` | Is the server up, how many passages are loaded, is the reranker loaded, is `/ask` on, is a key required. Always open, so monitoring can reach it |
+| `POST /search` | The best matching passages for a question. No model cost |
+| `POST /ask` | A written answer with checked citations. Needs `ANTHROPIC_API_KEY`; without it, returns 503. Rate limited per client |
+
+If the server has a key set (see "Protecting it" below), `/search` and `/ask` need
+it in an `X-API-Key` header: add `-H "X-API-Key: $FILING_ANALYST_API_KEY"` to the
+example below.
 
 ```
 $ curl -s -X POST localhost:8000/search -H 'Content-Type: application/json' \
@@ -126,6 +130,44 @@ Settings, read when the server starts:
 | `FILING_ANALYST_INDEX` | `index` | index folder made by `ingest` |
 | `FILING_ANALYST_RERANK` | `1` | `0` skips loading the reranker (faster start, less memory) |
 | `ANTHROPIC_API_KEY` | unset | turns on `/ask` |
+| `FILING_ANALYST_API_KEY` | unset | if set, `/search` and `/ask` require it in an `X-API-Key` header. At least 16 characters |
+| `FILING_ANALYST_ASK_PER_MINUTE` | `10` | how many `/ask` calls each client may make per minute. A whole number, 1 or more |
+
+A setting with a bad value (a key shorter than 16 characters, a limit of `0` or
+`abc`) stops the server at startup with a message saying what is wrong, rather than
+running with protection quietly off. An empty `FILING_ANALYST_API_KEY` counts as
+unset.
+
+### Protecting it
+
+`/ask` calls a paid language model, so every call costs money. Out of the box
+`uvicorn` only listens on `127.0.0.1`, which means only your own machine can reach
+the server. **Before making it reachable from other machines** (`--host 0.0.0.0`,
+a container, a cloud server), set a key:
+
+```
+export FILING_ANALYST_API_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+uvicorn filing_analyst.api:app --host 0.0.0.0 --port 8000
+curl -s -X POST localhost:8000/search -H 'Content-Type: application/json' \
+     -H "X-API-Key: $FILING_ANALYST_API_KEY" -d '{"question": "Apple revenue 2026"}'
+```
+
+| Reply | Meaning |
+|---|---|
+| 401 | No key, or the wrong key. The reply never contains the real key |
+| 429 | Too many `/ask` calls from this client in the last minute. The `Retry-After` header says how many seconds to wait |
+
+Details:
+
+- Keys are compared with `hmac.compare_digest`, which takes the same time however
+  much of a guess is right, so a key cannot be worked out by timing replies.
+- Requests rejected for a missing key or bad input never reach the model and do
+  not count towards the limit, so nobody can use up another person's allowance
+  without the key.
+- The limit is counted per client IP address and kept in memory: it resets when
+  the server restarts, and each server process counts separately. Behind a proxy
+  or load balancer every request comes from the proxy's address, so all users
+  would share one limit. For that setup, put the limit in the proxy instead.
 
 How it behaves under load and errors:
 
@@ -189,6 +231,11 @@ SEC on your own machine. Run the commands above and paste the table here.
   the question, 24 parallel requests, a model that invents a number, refuses or
   fails, error messages that must not leak secrets, and no model call (no cost)
   for a rejected request
+- API protection: no key, empty key, wrong key, a key one character short or long,
+  wrong case, a leading space, the key in the wrong header and non ASCII bytes are
+  all refused on both endpoints without a model call; the rate limit blocks the
+  next call, resets after a minute (on a fake clock, so no waiting), counts each
+  client separately and ignores rejected requests; bad settings stop startup
 - real models: a paraphrase that shares no words with the passage is still found
 
 The sample filings in `tests/fixtures.py` are **fictional** companies with
