@@ -6,7 +6,8 @@ requires-python = ">=3.10"
 dependencies = ["beautifulsoup4", "lxml", "numpy", "fastembed", "anthropic", "requests"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+api = ["fastapi", "uvicorn"]
+dev = ["pytest", "httpx", "fastapi", "uvicorn"]  # httpx powers FastAPI's test client
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

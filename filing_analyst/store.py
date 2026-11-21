@@ -68,7 +68,11 @@ class Store:
     def __init__(self, directory: str):
         self.dir = directory
         os.makedirs(directory, exist_ok=True)
-        self.db = sqlite3.connect(os.path.join(directory, "filings.db"))
+        # check_same_thread=False lets a web server's worker threads use this
+        # connection. Callers that use it from several threads must take turns
+        # (the API does this with a lock); sqlite3 connections are not safe to
+        # use from two threads at the same moment.
+        self.db = sqlite3.connect(os.path.join(directory, "filings.db"), check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         self._emb: np.ndarray | None = None

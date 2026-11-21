@@ -72,6 +72,74 @@ python -m filing_analyst ask "What was Microsoft's net income for fiscal 2024?"
 
 The first run downloads the two small models (about 200 MB total).
 
+## Web API
+
+The same search and answers are available over HTTP, so a web page, a chat bot
+or another program can use them.
+
+```
+pip install -e ".[api]"
+uvicorn filing_analyst.api:app --port 8000
+```
+
+Then open http://localhost:8000/docs for an interactive page where every endpoint
+can be tried from the browser.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /health` | Is the server up, how many passages are loaded, is the reranker loaded, is `/ask` on |
+| `POST /search` | The best matching passages for a question. Free, no API key needed |
+| `POST /ask` | A written answer with checked citations. Needs `ANTHROPIC_API_KEY`; without it, returns 503 |
+
+```
+$ curl -s -X POST localhost:8000/search -H 'Content-Type: application/json' \
+       -d '{"question": "What was NVIDIA total revenue for fiscal 2026?", "k": 3}'
+{
+  "question": "What was NVIDIA total revenue for fiscal 2026?",
+  "filters": {"tickers": ["NVDA"], "year": 2026},
+  "reranked": true,
+  "results": [
+    {"rank": 1, "label": "NVIDIA CORP 2026 10-K, Item 7 Management's Discussion and Analysis ...",
+     "ticker": "NVDA", "fiscal_year": 2026, "item": "7", "kind": "text", "text": "...", "score": 8.4},
+    ...
+  ]
+}
+```
+
+Request fields: `question` (1 to 1,000 characters), `k` (1 to 20, default 5), and
+for `/search` also `mode` (`hybrid` default, `dense` or `bm25`), `rerank` (default
+true) and `use_filters` (default true). Anything else is rejected with a 422 that
+says what is wrong, before any search runs or any model is called.
+
+**Choosing a mode.** The default is the full pipeline (hybrid search, company and
+year filter, reranker), the same as the command line. On the number lookup
+questions in the eval below, vector search alone did better and was much faster
+(about 0.05 s against 1.3 s per request on a laptop), so for questions like "What
+was X's revenue in year Y" send `"mode": "dense", "rerank": false`. The eval does
+not cover paraphrased or wording based questions, which is where keyword search
+and the reranker are meant to help, so the default was not changed on its evidence.
+
+Settings, read when the server starts:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `FILING_ANALYST_INDEX` | `index` | index folder made by `ingest` |
+| `FILING_ANALYST_RERANK` | `1` | `0` skips loading the reranker (faster start, less memory) |
+| `ANTHROPIC_API_KEY` | unset | turns on `/ask` |
+
+How it behaves under load and errors:
+
+- The index and models load once at startup. If the index is empty the server
+  refuses to start and says to run `ingest` first.
+- Requests run on several threads, and the shared database connection and models
+  are used by one search at a time (a lock). Without the lock, parallel requests
+  corrupt each other; a test sends 24 requests at once to check this. The slow
+  language model call in `/ask` runs outside the lock, so it does not hold up
+  other searches.
+- If the language model fails, `/ask` returns 502 with a short message. The full
+  error goes only to the server log, because it can contain keys or internal
+  details.
+
 ## Measuring it
 
 Claims about search quality need numbers, so there is a scoring tool.
@@ -106,7 +174,7 @@ SEC on your own machine. Run the commands above and paste the table here.
 
 ## Tests
 
-`pytest` runs 40+ tests, no network needed except for the model download:
+`pytest` runs 70+ tests, no network needed except for the model download:
 
 - parser: table of contents skipped, hidden data removed, table cells cleaned,
   words split across tags kept whole, cross references not mistaken for headings
@@ -117,6 +185,10 @@ SEC on your own machine. Run the commands above and paste the table here.
 - answers: a correct answer passes; an invented number, a number taken from an
   uncited passage, a made up citation and a missing citation are each caught
 - scoring: metrics computed by hand on small cases
+- web API: every endpoint, ten kinds of bad input, broken JSON, search syntax in
+  the question, 24 parallel requests, a model that invents a number, refuses or
+  fails, error messages that must not leak secrets, and no model call (no cost)
+  for a rejected request
 - real models: a paraphrase that shares no words with the passage is still found
 
 The sample filings in `tests/fixtures.py` are **fictional** companies with
