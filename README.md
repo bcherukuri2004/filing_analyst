@@ -168,6 +168,16 @@ Details:
   the server restarts, and each server process counts separately. Behind a proxy
   or load balancer every request comes from the proxy's address, so all users
   would share one limit. For that setup, put the limit in the proxy instead.
+- Memory for the limit has a hard cap: it remembers at most 10,000 clients. When
+  a new address arrives and the table is full, the client seen longest ago is
+  forgotten, and every call does the same small amount of work however full the
+  table is. (An earlier version had no real cap: a flood of 50,000 addresses,
+  cheap to get with IPv6, grew the table to 50,000 entries and made each call
+  about 5,000 times slower. A test now floods it to check this.)
+- Trade-off of the cap: if a flood of new addresses fills the table, a client
+  that has gone quiet can be forgotten and get a fresh limit. A client that keeps
+  calling, even one being refused with 429, counts as recently seen, so a flood
+  cannot reset the limit of someone who is actively hitting it.
 
 How it behaves under load and errors:
 
@@ -236,6 +246,10 @@ SEC on your own machine. Run the commands above and paste the table here.
   all refused on both endpoints without a model call; the rate limit blocks the
   next call, resets after a minute (on a fake clock, so no waiting), counts each
   client separately and ignores rejected requests; bad settings stop startup
+- rate limiter memory: a flood of 50,000 addresses never grows it past its cap,
+  the client seen longest ago is dropped first, a blocked client that keeps
+  trying stays blocked through a flood, and calls stay as cheap with a full
+  table as with a small one
 - real models: a paraphrase that shares no words with the passage is still found
 
 The sample filings in `tests/fixtures.py` are **fictional** companies with

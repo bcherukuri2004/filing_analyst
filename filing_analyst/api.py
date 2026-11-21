@@ -26,7 +26,7 @@ import math
 import os
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -140,22 +140,43 @@ def settings_from_env(env: Mapping[str, str]) -> dict:
     return {"api_key": key, "ask_per_minute": per_minute}
 
 
+MAX_TRACKED_CLIENTS = 10_000
+
+
 class RateLimiter:
     """At most `limit` calls per client in any 60 second window. It remembers
     the time of each client's recent calls and forgets them after a minute.
-    Kept in memory, so it resets when the server restarts and is per process."""
+    Kept in memory, so it resets when the server restarts and is per process.
 
-    def __init__(self, limit: int, clock: Callable[[], float]):
+    Memory is bounded: at most `max_clients` clients are remembered, each with
+    at most `limit` times. The table is kept in order of when each client was
+    last seen; when it is full, the client seen longest ago is dropped. Every
+    call does a fixed amount of work however many clients there are.
+
+    Trade-off: if a flood of new addresses fills the table, a quiet client can
+    be dropped and its count forgotten. A client that keeps calling (even if it
+    is being refused) stays at the "recent" end and keeps its count."""
+
+    def __init__(self, limit: int, clock: Callable[[], float], max_clients: int = MAX_TRACKED_CLIENTS):
+        if max_clients < 1:
+            raise ValueError(f"max_clients must be at least 1, got {max_clients}")
         self.limit = limit
         self.clock = clock
-        self.calls: dict[str, deque[float]] = {}
+        self.max_clients = max_clients
+        self.calls: OrderedDict[str, deque[float]] = OrderedDict()
         self.lock = threading.Lock()
 
     def check(self, client: str) -> None:
         """Count one call, or raise 429 if the client is over the limit."""
         with self.lock:
             now = self.clock()
-            recent = self.calls.setdefault(client, deque())
+            recent = self.calls.get(client)
+            if recent is None:
+                if len(self.calls) >= self.max_clients:
+                    self.calls.popitem(last=False)  # drop the client seen longest ago
+                recent = self.calls[client] = deque()
+            else:
+                self.calls.move_to_end(client)  # mark as seen just now, refused or not
             while recent and recent[0] <= now - RATE_WINDOW_SECONDS:
                 recent.popleft()
             if len(recent) >= self.limit:
@@ -163,10 +184,6 @@ class RateLimiter:
                 raise HTTPException(429, f"Too many /ask requests. Limit is {self.limit} per minute.",
                                     headers={"Retry-After": str(max(1, wait))})
             recent.append(now)
-            # Forget clients with no recent calls, so the table cannot grow forever.
-            if len(self.calls) > 10_000:
-                for c in [c for c, d in self.calls.items() if not d or d[-1] <= now - RATE_WINDOW_SECONDS]:
-                    del self.calls[c]
 
 
 # ------------------------------------------------------------ the app
