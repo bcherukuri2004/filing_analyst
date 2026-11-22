@@ -192,6 +192,57 @@ How it behaves under load and errors:
   error goes only to the server log, because it can contain keys or internal
   details.
 
+## Running in Docker
+
+The container holds the code, its packages and both models, so it runs the same
+on any machine with Docker and needs no Python setup. It does not hold the search
+index or any keys: the index is mounted from your machine read-only, and keys are
+passed in when it starts.
+
+Build the index once (see Setup), then:
+
+```
+docker compose up --build -d          # or: docker-compose up --build -d
+curl -s localhost:8000/health
+docker compose logs -f                # watch it
+docker compose down                   # stop and remove it
+```
+
+The first build takes a few minutes (packages and about 150 MB of models). Later
+builds reuse those steps and take seconds unless `pyproject.toml` changes.
+
+**Keys and settings.** Put them in a file named `.env` next to
+`docker-compose.yml`, which Compose reads automatically and git ignores:
+
+```
+FILING_ANALYST_API_KEY=<a long random key, see "Protecting it">
+ANTHROPIC_API_KEY=<only if you want /ask>
+FILING_ANALYST_ASK_PER_MINUTE=10
+```
+
+Also available: `FILING_ANALYST_PORT` (default 8000), `FILING_ANALYST_INDEX_DIR`
+(default `./index`) and `FILING_ANALYST_RERANK`. Keys are never written into the
+image, so the image can be shared without sharing them.
+
+**Updating the data.** Run `ingest` again on your machine, then
+`docker compose restart`. No rebuild is needed, because the index is not part of
+the image.
+
+How the container is locked down:
+
+| Setting | What it means |
+|---|---|
+| Port published as `127.0.0.1:8000` | Only this machine can connect. Change it only after setting `FILING_ANALYST_API_KEY` |
+| Index mounted `:ro` | The app cannot change or damage the index |
+| Runs as user `app` (uid 10001), not root | A break-in into the app gets very little |
+| `read_only: true`, only `/tmp` writable | The app cannot change its own files |
+| `no-new-privileges`, `cap_drop: ALL` | It cannot gain extra powers after starting |
+| `HF_HUB_OFFLINE=1`, models inside the image | It never downloads anything while running |
+| Health check on `/health` | `docker ps` shows `healthy`, not just `running` |
+
+The image is about 870 MB, mostly the model runtime (onnxruntime), numpy and the
+models themselves.
+
 ## Measuring it
 
 Claims about search quality need numbers, so there is a scoring tool.
@@ -251,6 +302,20 @@ SEC on your own machine. Run the commands above and paste the table here.
   trying stays blocked through a flood, and calls stay as cheap with a full
   table as with a small one
 - real models: a paraphrase that shares no words with the passage is still found
+
+Container tests are slow (they build the image) and only run when asked:
+
+```
+RUN_DOCKER_TESTS=1 pytest tests/test_docker.py -v
+```
+
+They build and start the container with a throwaway key and the real index, then
+check: `/health` sees the mounted index, `/search` works with the key and is
+refused without it, Docker reports it healthy, it does not run as root, the index
+is mounted read-only and a write is refused, the port is published to
+`127.0.0.1` only, no keys or local files (`.venv`, `.git`, `data`, `.env`) are in
+the image, and a copy with no network at all can still load both models. Everything
+is removed afterwards, pass or fail.
 
 The sample filings in `tests/fixtures.py` are **fictional** companies with
 invented numbers. They imitate the awkward parts of real EDGAR files but are not

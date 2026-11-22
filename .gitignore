@@ -3,3 +3,6 @@ data/
 __pycache__/
 .pytest_cache/
 *.egg-info/
+# Keys and settings for docker compose. Never commit these.
+.env
+.env.*

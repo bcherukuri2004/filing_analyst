@@ -1,0 +1,34 @@
+# Run the API in a container:
+#
+#   docker compose up --build -d
+#   curl localhost:8000/health
+#
+# Settings come from your shell or a .env file next to this one (never
+# committed). Only FILING_ANALYST_API_KEY matters before exposing it further.
+
+services:
+  api:
+    build: .
+    image: filing-analyst:latest
+    ports:
+      # 127.0.0.1 = only this machine can connect. Change it only after
+      # setting FILING_ANALYST_API_KEY (see "Protecting it" in the README).
+      - "127.0.0.1:${FILING_ANALYST_PORT:-8000}:8000"
+    volumes:
+      # The index made by `python -m filing_analyst ingest`, read-only.
+      - "${FILING_ANALYST_INDEX_DIR:-./index}:/data/index:ro"
+    environment:
+      FILING_ANALYST_API_KEY: ${FILING_ANALYST_API_KEY:-}
+      FILING_ANALYST_ASK_PER_MINUTE: ${FILING_ANALYST_ASK_PER_MINUTE:-10}
+      FILING_ANALYST_RERANK: ${FILING_ANALYST_RERANK:-1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    # Extra lock-down: the container's own files are read-only (only /tmp is
+    # writable), it cannot gain new privileges, and it has no special Linux powers.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
