@@ -127,7 +127,7 @@ Settings, read when the server starts:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `FILING_ANALYST_INDEX` | `index` | index folder made by `ingest` |
+| `FILING_ANALYST_INDEX` | `index` | index folder made by `ingest`, or a `postgresql://` address (see "Using Postgres") |
 | `FILING_ANALYST_RERANK` | `1` | `0` skips loading the reranker (faster start, less memory) |
 | `ANTHROPIC_API_KEY` | unset | turns on `/ask` |
 | `FILING_ANALYST_API_KEY` | unset | if set, `/search` and `/ask` require it in an `X-API-Key` header. At least 16 characters |
@@ -262,6 +262,78 @@ How the container is locked down:
 The image is about 870 MB, mostly the model runtime (onnxruntime), numpy and the
 models themselves.
 
+## Using Postgres instead of SQLite
+
+SQLite is the default because it needs no setup: the index is a folder. For a
+shared database server there is a second store, **Postgres with the pgvector
+extension**. Everything else (search, answers, the eval, the API) works the same
+on either, because both stores have the same methods. One setting picks the store:
+a folder means SQLite, and a `postgresql://` address means Postgres.
+
+```
+pip install -e ".[postgres]"
+echo "POSTGRES_PASSWORD=$(python -c 'import secrets; print(secrets.token_urlsafe(18))')" >> .env
+docker compose --profile postgres up -d db        # Postgres 17 + pgvector, on 127.0.0.1:5433
+
+export PG="postgresql://filing:<the password>@127.0.0.1:5433/filing"
+python -m filing_analyst --index "$PG" ingest data
+python -m filing_analyst --index "$PG" search "NVIDIA revenue 2026"
+FILING_ANALYST_INDEX="$PG" uvicorn filing_analyst.api:app --port 8000
+```
+
+The database uses port **5433**, not the usual 5432, so it cannot clash with a
+Postgres already installed on your machine. To run the API container against it,
+set `FILING_ANALYST_CONTAINER_INDEX=postgresql://filing:<password>@db:5432/filing`
+in `.env` (inside Docker the database is called `db`) and run
+`docker compose --profile postgres up -d`. Without `--profile postgres` the
+database is not started at all.
+
+How the Postgres store works:
+
+| Part | SQLite store | Postgres store |
+|---|---|---|
+| Keyword search | FTS5, ranked with BM25 | built in full text search (`tsvector`, GIN index), ranked with `ts_rank_cd` |
+| Vector search | every vector compared in numpy | pgvector, HNSW index, inner product |
+| Company and year filters | applied in Python after scoring | a `WHERE` in the same query |
+| Replacing the index | one transaction | one transaction: a failure halfway leaves the old index untouched |
+
+Details that matter:
+
+- **Filtered vector search returns every match.** An HNSW index finds near
+  neighbours first and filters afterwards, so by default a filter (or asking for
+  more than 40 rows) can quietly return fewer rows than asked for. The store turns
+  on pgvector's iterative scans, which keep looking. A test forces Postgres to use
+  the index on 3,000 rows and checks the counts.
+- **Passwords never show.** Logs, messages and `/health` show the address as
+  `postgresql://filing:***@...`. `/health` only says `"store": "postgres"`.
+- **Bad input is refused before anything is deleted**: vectors with NaN or
+  infinite values, or a different number of vectors and passages. Postgres cannot
+  store the NUL character, so both stores drop it from text.
+- **Equal scores come back in id order** on both stores, so the same question
+  always gives the same results.
+
+**SQLite and Postgres compared** (the same 10 filings and 40 questions as below):
+
+| Setup | SQLite recall@5 | SQLite MRR | Postgres recall@5 | Postgres MRR |
+|---|---|---|---|---|
+| keyword search only | 0.000 (BM25) | 0.000 | 0.050 (ts_rank) | 0.017 |
+| vector search only | 1.000 | 0.835 | 1.000 | 0.835 |
+| hybrid (keyword + vector) | 0.500 | 0.212 | 0.875 | 0.527 |
+| hybrid + company/year filter | 0.475 | 0.263 | 0.900 | 0.721 |
+| hybrid + filter + reranker | 0.800 | 0.415 | 0.850 | 0.399 |
+
+Vector search is identical, as it should be: same vectors, same maths. Hybrid
+search scores higher on Postgres, **but not because Postgres search is better.
+Its keyword search is worse.** `ts_rank_cd` gives every word the same weight,
+while BM25 gives rare words (like a company name) more weight than common ones
+(like "revenue"). Measured on these questions, the keyword top 10 is from the
+right company 81% of the time on SQLite and 34% on Postgres. Weaker keyword
+results add less competition when the two lists are merged, so the vector
+search's correct answer stays near the top. The lesson is the same as in
+"Results" below: on these questions, keyword search hurts, and the better fix is
+to give it the company and year labels it lacks (see "Limits"), not to switch
+databases.
+
 ## Measuring it
 
 Claims about search quality need numbers, so there is a scoring tool.
@@ -291,12 +363,27 @@ rather than scored.
 
 ### Results
 
-Not filled in yet: this needs real filings, which have to be downloaded from the
-SEC on your own machine. Run the commands above and paste the table here.
+Two 10-K filings each for Apple, Microsoft, NVIDIA, Alphabet and Amazon (10
+filings, 2,960 passages), 40 questions:
+
+| Setup | recall@5 | MRR |
+|---|---|---|
+| keyword search only (BM25) | 0.000 | 0.000 |
+| vector search only | 1.000 | 0.835 |
+| hybrid (keyword + vector) | 0.500 | 0.212 |
+| hybrid + company/year filter | 0.475 | 0.263 |
+| hybrid + filter + reranker | 0.800 | 0.415 |
+
+Vector search alone wins. The answers sit in financial tables, and each vector is
+made from the passage *plus* a label with the company and year, while keyword
+search only sees the passage. So keyword search finds revenue tables for the wrong
+company or year, and merging its results in pushes the right answer down. This is
+a design finding, not a bug, and it is why the API lets you choose `"mode":
+"dense"`. The obvious next step is to add the same labels to the keyword index.
 
 ## Tests
 
-`pytest` runs 70+ tests, no network needed except for the model download:
+`pytest` runs 230+ tests, no network needed except for the model download:
 
 - parser: table of contents skipped, hidden data removed, table cells cleaned,
   words split across tags kept whole, cross references not mistaken for headings
@@ -328,7 +415,22 @@ SEC on your own machine. Run the commands above and paste the table here.
 - client grouping: IPv6 addresses in one `/64` share one limit, neighbouring
   networks and separate IPv4 addresses do not, and junk addresses (`unknown`,
   `999.1.1.1`, 5,000 characters) are kept as they are without crashing
+- both stores: the same storage tests run on SQLite and on Postgres (same counts,
+  same passages under the same ids, same vector results, filters, odd questions
+  like `'; DROP TABLE chunks; --` or 5,000 characters, the API on top). Writing:
+  replacing instead of adding, a new vector size, NaN, infinite values or a
+  missing vector refused with the old index kept, a failure halfway through rolled
+  back, quotes, emoji and NUL in text, 3,000 rows through the HNSW index with
+  filters, equal scores in id order, and passwords hidden in every message
 - real models: a paraphrase that shares no words with the passage is still found
+
+The Postgres half runs when `FILING_ANALYST_TEST_PG` names a database with "test"
+in its name (the tests wipe it), and is skipped otherwise:
+
+```
+docker compose --profile postgres exec db psql -U filing -c "CREATE DATABASE filing_test"
+FILING_ANALYST_TEST_PG="postgresql://filing:<password>@127.0.0.1:5433/filing_test" pytest
+```
 
 Container tests are slow (they build the image) and only run when asked:
 
@@ -359,3 +461,8 @@ real data.
   comparing two correct numbers the wrong way.
 - Question text is only matched to a company by name or ticker, so a vague
   reference like "the iPhone maker" will not trigger the filter.
+- Keyword search only sees each passage's text and section title, not the company
+  and year label that vector search gets. On financial questions that makes it
+  find the right kind of table for the wrong company (see "Results").
+- On Postgres, keyword ranking (`ts_rank_cd`) gives every word the same weight,
+  unlike BM25, so it is weaker at telling companies apart.
