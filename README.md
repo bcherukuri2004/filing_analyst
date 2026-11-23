@@ -363,21 +363,50 @@ It reports recall@5 (how often the right passage was in the top 5) and MRR
 example because the filing writes the number differently, are left out and counted
 rather than scored.
 
+### The wider eval
+
+The first question set (above) asks 4 figures per filing in one fixed wording,
+with answers fetched from the SEC's API. The wider set asks **13 kinds of
+figure** (revenue, cost of revenue, gross profit, R&D, operating income, income
+tax, net income, operating cash flow, capital spending, cash, total assets, total
+liabilities, shareholders' equity), each in one of **three wordings**, some of
+which avoid the filing's own words ("How much did Apple bring in from sales").
+
+```
+python scripts/make_wide_eval.py data eval/questions_wide.jsonl
+python -m filing_analyst eval eval/questions_wide.jsonl
+```
+
+The answers come from the **inline XBRL tags inside the filings themselves**:
+every official number in a 10-K is tagged with what it is and which period and
+part of the company it covers. The builder only takes the whole-company figure
+for the full year the filing covers, never last year's column, a single segment
+or one quarter, and keeps the number exactly as printed. No network is needed.
+As a cross-check, all 40 answers from the SEC's API match what the builder reads
+from the files, from two independent sources. A figure a company does not tag
+(Amazon reports no gross profit line) gets no question, so the 10 filings give
+117 questions.
+
+The eval also shows recall **by kind of question**, because one average can hide
+a whole kind failing.
+
 ### The gate
 
 `eval --gate eval/gate.json` turns the eval into a pass or fail check: the
 command exits with an error if any score is under the minimum in the gate file,
-or if fewer than `min_questions` questions could be graded.
+or if fewer than `min_questions` questions could be graded. CI runs it on the
+wider set.
 
 ```
-python -m filing_analyst eval eval/questions.jsonl --gate eval/gate.json
+python -m filing_analyst eval eval/questions_wide.jsonl --gate eval/gate.json
 ```
 
 The question count matters as much as the scores. When a parser bug was put
 back on purpose (headings laid out as tables, which Amazon uses), both Amazon
-filings lost all their sections, 8 of the 40 questions could no longer be
-graded, and the scores of the remaining 32 went **up** (vector MRR 0.835 to
-0.846). Only the question count caught it. The minimums sit a little under
+filings lost all their sections and their questions could no longer be graded:
+8 of 40 on the first set, 19 of 117 on the wider one. On the first set, the
+scores of the remaining questions went **up** (vector MRR 0.835 to 0.846). Only
+the question count caught it, on both sets. The minimums sit a little under
 today's scores, so a real drop fails but tiny differences between machines do
 not.
 
@@ -401,9 +430,39 @@ company or year, and merging its results in pushes the right answer down. This i
 a design finding, not a bug, and it is why the API lets you choose `"mode":
 "dense"`. The obvious next step is to add the same labels to the keyword index.
 
+**The wider set** (117 questions, 13 kinds of figure, varied wording) is harder,
+and shows what the first set hid:
+
+| Setup | recall@5 | MRR |
+|---|---|---|
+| keyword search only (BM25) | 0.009 | 0.002 |
+| vector search only | 0.821 | 0.601 |
+| hybrid (keyword + vector) | 0.274 | 0.117 |
+| hybrid + company/year filter | 0.325 | 0.181 |
+| hybrid + filter + reranker | 0.556 | 0.301 |
+
+| Kind of question | n | vector | full pipeline (+ reranker) |
+|---|---|---|---|
+| net income, operating income, operating cash flow, revenue, total assets | 50 | 1.00 | 0.20 to 1.00 |
+| gross profit, cost of revenue, shareholders' equity, cash | 35 | 0.78 to 0.83 | 0.40 to 0.70 |
+| research and development, income tax | 17 | 0.67 to 0.75 | 0.44 to 0.62 |
+| capital spending | 7 | 0.43 | 0.14 |
+| total liabilities | 8 | 0.38 | 0.25 |
+
+- Vector search drops from a perfect 1.000 to 0.821. The four figures in the
+  first set are exactly the ones it finds every time; the others are harder.
+- Capital spending and total liabilities are weak for every setup. A likely
+  reason (not yet measured): these numbers mostly appear only once, inside large
+  cash flow or balance sheet tables that are split into many similar looking
+  chunks, while figures like revenue are also repeated in the text.
+- The reranker helps most kinds but **hurts total assets badly** (1.00 to 0.20):
+  it prefers passages that talk about assets over the balance sheet row that
+  states the number.
+- On Postgres, vector search scores the same 0.821, as it should.
+
 ## Tests
 
-`pytest` runs 230+ tests, no network needed except for the model download:
+`pytest` runs about 280 tests (the Postgres and container ones only when asked, see below), no network needed except for the model download:
 
 - parser: table of contents skipped, hidden data removed, table cells cleaned,
   words split across tags kept whole, cross references not mistaken for headings
@@ -443,6 +502,13 @@ a design finding, not a bug, and it is why the API lets you choose `"mode":
   back, quotes, emoji and NUL in text, 3,000 rows through the HNSW index with
   filters, equal scores in id order, and passwords hidden in every message
 - real models: a paraphrase that shares no words with the passage is still found
+- the wider eval: the builder takes the company-wide full-year figure and never
+  last year's column, a segment or a quarter, skips numbers too short to check,
+  handles negative numbers, nested tags, broken markup and filings without tags,
+  reads the year end from the tag rather than the words shown, varies wording
+  but rebuilds the same file every time; the committed question file covers all
+  13 kinds and 5 companies with one question per figure; the breakdown counts
+  each kind
 - the eval gate: a score just under a minimum fails and says by how much, every
   failure is listed, too few graded questions fails, a typo in a setup name or a
   setup that was not run fails, broken or empty gate files are refused, and the
