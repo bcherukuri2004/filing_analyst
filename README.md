@@ -1,5 +1,7 @@
 # filing_analyst
 
+[![CI](https://github.com/bcherukuri2004/filing_analyst/actions/workflows/ci.yml/badge.svg)](https://github.com/bcherukuri2004/filing_analyst/actions/workflows/ci.yml)
+
 Ask questions about public company annual reports (SEC Form 10-K) and get short
 answers that cite the exact passages they came from. A retrieval augmented
 generation (RAG) project: it first finds the right passages, then has a language
@@ -361,6 +363,24 @@ It reports recall@5 (how often the right passage was in the top 5) and MRR
 example because the filing writes the number differently, are left out and counted
 rather than scored.
 
+### The gate
+
+`eval --gate eval/gate.json` turns the eval into a pass or fail check: the
+command exits with an error if any score is under the minimum in the gate file,
+or if fewer than `min_questions` questions could be graded.
+
+```
+python -m filing_analyst eval eval/questions.jsonl --gate eval/gate.json
+```
+
+The question count matters as much as the scores. When a parser bug was put
+back on purpose (headings laid out as tables, which Amazon uses), both Amazon
+filings lost all their sections, 8 of the 40 questions could no longer be
+graded, and the scores of the remaining 32 went **up** (vector MRR 0.835 to
+0.846). Only the question count caught it. The minimums sit a little under
+today's scores, so a real drop fails but tiny differences between machines do
+not.
+
 ### Results
 
 Two 10-K filings each for Apple, Microsoft, NVIDIA, Alphabet and Amazon (10
@@ -423,6 +443,10 @@ a design finding, not a bug, and it is why the API lets you choose `"mode":
   back, quotes, emoji and NUL in text, 3,000 rows through the HNSW index with
   filters, equal scores in id order, and passwords hidden in every message
 - real models: a paraphrase that shares no words with the passage is still found
+- the eval gate: a score just under a minimum fails and says by how much, every
+  failure is listed, too few graded questions fails, a typo in a setup name or a
+  setup that was not run fails, broken or empty gate files are refused, and the
+  real command exits with an error when the gate fails
 
 The Postgres half runs when `FILING_ANALYST_TEST_PG` names a database with "test"
 in its name (the tests wipe it), and is skipped otherwise:
@@ -449,6 +473,29 @@ is removed afterwards, pass or fail.
 The sample filings in `tests/fixtures.py` are **fictional** companies with
 invented numbers. They imitate the awkward parts of real EDGAR files but are not
 real data.
+
+## Continuous integration
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every
+pull request:
+
+| Job | What it does |
+|---|---|
+| `tests` | The whole suite on Python 3.10 and 3.12, with a real Postgres + pgvector database beside it, so the Postgres tests run too. Models are cached between runs |
+| `eval-gate` | Downloads the 10 real filings (cached, so the SEC is asked once), builds the index and runs the eval with the gate. A change that makes search worse fails the build |
+
+The SEC asks every program that downloads filings to identify itself with a name
+and email. The gate job reads them from a repository secret, which stays private
+even though the repository is public:
+
+```
+gh secret set SEC_USER_AGENT --body "Your Name you@example.com"
+```
+
+Without the secret the gate job explains what is missing and stops, instead of
+failing. The workflow can only read the repository, never write to it, and the
+database password in it is a throwaway for a database that exists only during
+the run.
 
 ## Limits
 
