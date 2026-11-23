@@ -17,10 +17,13 @@ Settings, read from environment variables when the server starts:
     ANTHROPIC_API_KEY              turns on /ask
     FILING_ANALYST_API_KEY         if set, /search and /ask need it in an X-API-Key header
     FILING_ANALYST_ASK_PER_MINUTE  /ask calls allowed per client per minute (default 10)
+    FILING_ANALYST_ASK_GLOBAL_PER_MINUTE
+                                   /ask calls allowed per minute for everyone together (default 60)
 """
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import logging
 import math
 import os
@@ -130,14 +133,42 @@ def settings_from_env(env: Mapping[str, str]) -> dict:
     key = (env.get("FILING_ANALYST_API_KEY") or "").strip() or None  # empty counts as unset
     if key is not None and len(key) < MIN_KEY_CHARS:
         raise ValueError(f"FILING_ANALYST_API_KEY must be at least {MIN_KEY_CHARS} characters long")
-    raw = env.get("FILING_ANALYST_ASK_PER_MINUTE", "10").strip()
+    return {"api_key": key,
+            "ask_per_minute": _limit_from_env(env, "FILING_ANALYST_ASK_PER_MINUTE", 10),
+            "ask_global_per_minute": _limit_from_env(env, "FILING_ANALYST_ASK_GLOBAL_PER_MINUTE", 60)}
+
+
+def _limit_from_env(env: Mapping[str, str], name: str, default: int) -> int:
+    """A limit must be a whole number of at least 1. There is deliberately no
+    value that means "no limit", so a typo cannot switch protection off."""
+    raw = env.get(name, str(default)).strip()
     try:
-        per_minute = int(raw)
+        value = int(raw)
     except ValueError:
-        raise ValueError(f"FILING_ANALYST_ASK_PER_MINUTE must be a whole number, got {raw!r}") from None
-    if per_minute < 1:
-        raise ValueError(f"FILING_ANALYST_ASK_PER_MINUTE must be at least 1, got {per_minute}")
-    return {"api_key": key, "ask_per_minute": per_minute}
+        raise ValueError(f"{name} must be a whole number, got {raw!r}") from None
+    if value < 1:
+        raise ValueError(f"{name} must be at least 1, got {value}")
+    return value
+
+
+def client_key(host: str) -> str:
+    """Who to count a request against, for the per-client limit.
+
+    IPv4 addresses count one by one. IPv6 addresses are grouped by their first
+    64 bits (the "/64" network), because one home or phone connection is
+    usually given a whole /64, which is 2^64 addresses: counting each one
+    separately would let one person look like billions of clients.
+    Anything that is not an IP address (like "unknown") is used as it is."""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:  # "::ffff:10.0.0.1" is really the IPv4 address 10.0.0.1
+            return str(ip.ipv4_mapped)
+        # Built from the number, not the text, so a zone like "fe80::1%eth0" cannot upset it.
+        return str(ipaddress.IPv6Network((int(ip) >> 64 << 64, 64)))
+    return str(ip)
 
 
 MAX_TRACKED_CLIENTS = 10_000
@@ -157,14 +188,24 @@ class RateLimiter:
     be dropped and its count forgotten. A client that keeps calling (even if it
     is being refused) stays at the "recent" end and keeps its count."""
 
-    def __init__(self, limit: int, clock: Callable[[], float], max_clients: int = MAX_TRACKED_CLIENTS):
+    def __init__(self, limit: int, clock: Callable[[], float], max_clients: int = MAX_TRACKED_CLIENTS,
+                 message: str | None = None):
         if max_clients < 1:
             raise ValueError(f"max_clients must be at least 1, got {max_clients}")
         self.limit = limit
         self.clock = clock
         self.max_clients = max_clients
+        self.message = message or f"Too many /ask requests. Limit is {limit} per minute."
         self.calls: OrderedDict[str, deque[float]] = OrderedDict()
         self.lock = threading.Lock()
+
+    def undo(self, client: str) -> None:
+        """Take back the last call counted for this client (used when a later
+        check refuses the request, so the client is not charged for it)."""
+        with self.lock:
+            recent = self.calls.get(client)
+            if recent:
+                recent.pop()
 
     def check(self, client: str) -> None:
         """Count one call, or raise 429 if the client is over the limit."""
@@ -181,8 +222,7 @@ class RateLimiter:
                 recent.popleft()
             if len(recent) >= self.limit:
                 wait = math.ceil(recent[0] + RATE_WINDOW_SECONDS - now)
-                raise HTTPException(429, f"Too many /ask requests. Limit is {self.limit} per minute.",
-                                    headers={"Retry-After": str(max(1, wait))})
+                raise HTTPException(429, self.message, headers={"Retry-After": str(max(1, wait))})
             recent.append(now)
 
 
@@ -218,16 +258,24 @@ def _load_from_environment(state: _State) -> None:
 
 
 def create_app(retriever: Retriever | None = None, llm: LLM | None = None, *, api_key: str | None = None,
-               ask_per_minute: int | None = None, clock: Callable[[], float] = time.monotonic) -> FastAPI:
+               ask_per_minute: int | None = None, ask_global_per_minute: int | None = None,
+               clock: Callable[[], float] = time.monotonic) -> FastAPI:
     """Build the app. Tests pass in a small retriever and a fake model; the
     real server passes nothing and everything is loaded at startup.
 
     api_key: when set, /search and /ask require it in the X-API-Key header.
     ask_per_minute: when set, each client may call /ask this many times a minute.
+    ask_global_per_minute: when set, /ask may be called this many times a minute
+        by everyone together. This is the ceiling on language model spending.
     clock: where the rate limit gets the time (tests use a fake one)."""
     state = _State()
     state.retriever, state.llm = retriever, llm
     limiter = RateLimiter(ask_per_minute, clock) if ask_per_minute else None
+    # One shared counter for the whole server, so it only ever tracks one "client".
+    global_limiter = RateLimiter(
+        ask_global_per_minute, clock, max_clients=1,
+        message=f"The server is busy: /ask is limited to {ask_global_per_minute} calls a minute "
+                "for everyone together. Try again shortly.") if ask_global_per_minute else None
     expected = api_key.encode() if api_key else None
 
     def require_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
@@ -291,8 +339,20 @@ def create_app(retriever: Retriever | None = None, llm: LLM | None = None, *, ap
         if state.llm is None:
             raise HTTPException(503, "Answers are turned off. Set ANTHROPIC_API_KEY and restart the server. "
                                      "/search works without it.")
+        # The caller's own limit is checked first, so a caller who is over it
+        # never uses up the shared allowance. If the shared allowance is then
+        # full, the caller's call is taken back: being turned away because the
+        # server is busy does not count against them.
+        who = client_key(request.client.host if request.client else "unknown")
         if limiter:
-            limiter.check(request.client.host if request.client else "unknown")
+            limiter.check(who)
+        if global_limiter:
+            try:
+                global_limiter.check("everyone")
+            except HTTPException:
+                if limiter:
+                    limiter.undo(who)
+                raise
         r = loaded_retriever()
         with lock:
             hits, _ = r.search(req.question, k=req.k)

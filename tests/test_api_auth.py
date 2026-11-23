@@ -132,12 +132,12 @@ def test_rejected_requests_do_not_use_up_the_limit(retriever):
 
 def test_settings_defaults():
     s = settings_from_env({})
-    assert s == {"api_key": None, "ask_per_minute": 10}
+    assert s == {"api_key": None, "ask_per_minute": 10, "ask_global_per_minute": 60}
 
 
 def test_settings_read_key_and_limit():
     s = settings_from_env({"FILING_ANALYST_API_KEY": KEY, "FILING_ANALYST_ASK_PER_MINUTE": "25"})
-    assert s == {"api_key": KEY, "ask_per_minute": 25}
+    assert s == {"api_key": KEY, "ask_per_minute": 25, "ask_global_per_minute": 60}
 
 
 def test_empty_key_counts_as_unset():

@@ -89,7 +89,7 @@ can be tried from the browser.
 |---|---|
 | `GET /health` | Is the server up, how many passages are loaded, is the reranker loaded, is `/ask` on, is a key required. Always open, so monitoring can reach it |
 | `POST /search` | The best matching passages for a question. No model cost |
-| `POST /ask` | A written answer with checked citations. Needs `ANTHROPIC_API_KEY`; without it, returns 503. Rate limited per client |
+| `POST /ask` | A written answer with checked citations. Needs `ANTHROPIC_API_KEY`; without it, returns 503. Rate limited per client and in total |
 
 If the server has a key set (see "Protecting it" below), `/search` and `/ask` need
 it in an `X-API-Key` header: add `-H "X-API-Key: $FILING_ANALYST_API_KEY"` to the
@@ -132,10 +132,12 @@ Settings, read when the server starts:
 | `ANTHROPIC_API_KEY` | unset | turns on `/ask` |
 | `FILING_ANALYST_API_KEY` | unset | if set, `/search` and `/ask` require it in an `X-API-Key` header. At least 16 characters |
 | `FILING_ANALYST_ASK_PER_MINUTE` | `10` | how many `/ask` calls each client may make per minute. A whole number, 1 or more |
+| `FILING_ANALYST_ASK_GLOBAL_PER_MINUTE` | `60` | how many `/ask` calls everyone together may make per minute. This is the ceiling on model spending. A whole number, 1 or more |
 
 A setting with a bad value (a key shorter than 16 characters, a limit of `0` or
 `abc`) stops the server at startup with a message saying what is wrong, rather than
-running with protection quietly off. An empty `FILING_ANALYST_API_KEY` counts as
+running with protection quietly off. No value means "no limit": both limits are
+always on. An empty `FILING_ANALYST_API_KEY` counts as
 unset.
 
 ### Protecting it
@@ -155,7 +157,7 @@ curl -s -X POST localhost:8000/search -H 'Content-Type: application/json' \
 | Reply | Meaning |
 |---|---|
 | 401 | No key, or the wrong key. The reply never contains the real key |
-| 429 | Too many `/ask` calls from this client in the last minute. The `Retry-After` header says how many seconds to wait |
+| 429 | Too many `/ask` calls in the last minute, either from this client or from everyone together (the message says which). The `Retry-After` header says how many seconds to wait |
 
 Details:
 
@@ -164,10 +166,26 @@ Details:
 - Requests rejected for a missing key or bad input never reach the model and do
   not count towards the limit, so nobody can use up another person's allowance
   without the key.
-- The limit is counted per client IP address and kept in memory: it resets when
-  the server restarts, and each server process counts separately. Behind a proxy
-  or load balancer every request comes from the proxy's address, so all users
-  would share one limit. For that setup, put the limit in the proxy instead.
+- There are two limits on `/ask`. **Per client** (default 10 a minute) stops one
+  caller from using more than their share. **For everyone together** (default 60
+  a minute) puts a ceiling on spending: a per-client limit alone cannot, because
+  someone with 1,000 addresses would get 1,000 allowances. With the defaults,
+  `/ask` can never make more than 60 model calls a minute, however many
+  addresses are used.
+- The two limits are checked fairly. A client's own limit is checked first, so a
+  client that is over it, and keeps trying, never uses up the shared allowance
+  and cannot lock everyone else out. A client turned away because the server is
+  busy is not charged for that try.
+- A client means an IP address, with one exception: IPv6 addresses in the same
+  `/64` network count as one client. A home or phone connection is usually given
+  a whole `/64` (billions of addresses), so counting each address separately
+  would let one person look like billions of clients. An IPv4 address written in
+  IPv6 form (`::ffff:10.0.0.1`) counts as that IPv4 address.
+- Both limits are kept in memory: they reset when the server restarts, and each
+  server process counts separately, so 4 processes allow up to 4 x 60 a minute.
+  Behind a proxy or load balancer every request comes from the proxy's address,
+  so all users would share one per-client limit (the overall limit still holds).
+  For that setup, put the per-client limit in the proxy instead.
 - Memory for the limit has a hard cap: it remembers at most 10,000 clients. When
   a new address arrives and the table is full, the client seen longest ago is
   forgotten, and every call does the same small amount of work however full the
@@ -218,6 +236,7 @@ builds reuse those steps and take seconds unless `pyproject.toml` changes.
 FILING_ANALYST_API_KEY=<a long random key, see "Protecting it">
 ANTHROPIC_API_KEY=<only if you want /ask>
 FILING_ANALYST_ASK_PER_MINUTE=10
+FILING_ANALYST_ASK_GLOBAL_PER_MINUTE=60
 ```
 
 Also available: `FILING_ANALYST_PORT` (default 8000), `FILING_ANALYST_INDEX_DIR`
@@ -301,6 +320,14 @@ SEC on your own machine. Run the commands above and paste the table here.
   the client seen longest ago is dropped first, a blocked client that keeps
   trying stays blocked through a flood, and calls stay as cheap with a full
   table as with a small one
+- overall /ask limit: 500 addresses together never get past it; a client over its
+  own limit does not use up everyone's allowance; a client refused because the
+  server is busy keeps its own allowance; rejected requests and `/search` do not
+  count; it resets after a minute; `0`, `-1`, `2.5` and blank are refused at
+  startup
+- client grouping: IPv6 addresses in one `/64` share one limit, neighbouring
+  networks and separate IPv4 addresses do not, and junk addresses (`unknown`,
+  `999.1.1.1`, 5,000 characters) are kept as they are without crashing
 - real models: a paraphrase that shares no words with the passage is still found
 
 Container tests are slow (they build the image) and only run when asked:
