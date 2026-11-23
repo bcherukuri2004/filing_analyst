@@ -1,0 +1,117 @@
+{"question": "How much did Apple Inc. bring in from sales in fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["416,161"], "group": "revenue"}
+{"question": "What was Apple Inc.'s total cost of revenue in fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["220,960"], "group": "cost of revenue"}
+{"question": "What was Apple Inc.'s gross profit for fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["195,201"], "group": "gross profit"}
+{"question": "What was Apple Inc.'s R&D expense for fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["34,550"], "group": "research and development"}
+{"question": "What was Apple Inc.'s income from operations in its 2025 fiscal year?", "ticker": "AAPL", "year": 2025, "gold": ["133,050"], "group": "operating income"}
+{"question": "What did Apple Inc. pay in income taxes, as an expense, in its 2025 fiscal year?", "ticker": "AAPL", "year": 2025, "gold": ["20,719"], "group": "income tax"}
+{"question": "What was Apple Inc.'s net income for fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["112,010"], "group": "net income"}
+{"question": "What was Apple Inc.'s net cash from operating activities for fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["111,482"], "group": "operating cash flow"}
+{"question": "What were Apple Inc.'s capital expenditures for fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["12,715"], "group": "capital spending"}
+{"question": "What was Apple Inc.'s cash balance at the close of fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["35,934"], "group": "cash"}
+{"question": "What were Apple Inc.'s total assets at the end of fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["359,241"], "group": "total assets"}
+{"question": "What were Apple Inc.'s total liabilities at the end of fiscal 2025?", "ticker": "AAPL", "year": 2025, "gold": ["285,508"], "group": "total liabilities"}
+{"question": "How much equity did Apple Inc.'s shareholders have when its 2025 fiscal year ended?", "ticker": "AAPL", "year": 2025, "gold": ["73,733"], "group": "shareholders' equity"}
+{"question": "What was Apple Inc.'s total revenue for fiscal 2026?", "ticker": "AAPL", "year": 2026, "gold": ["478,834"], "group": "revenue"}
+{"question": "What were Apple Inc.'s total cost of sales for fiscal 2026?", "ticker": "AAPL", "year": 2026, "gold": ["245,232"], "group": "cost of revenue"}
+{"question": "How much gross margin, in dollars, did Apple Inc. earn in fiscal 2026?", "ticker": "AAPL", "year": 2026, "gold": ["233,602"], "group": "gross profit"}
+{"question": "What was Apple Inc.'s R&D expense for fiscal 2026?", "ticker": "AAPL", "year": 2026, "gold": ["45,765"], "group": "research and development"}
+{"question": "What was Apple Inc.'s income from operations in its 2026 fiscal year?", "ticker": "AAPL", "year": 2026, "gold": ["158,063"], "group": "operating income"}
+{"question": "What did Apple Inc. pay in income taxes, as an expense, in its 2026 fiscal year?", "ticker": "AAPL", "year": 2026, "gold": ["27,062"], "group": "income tax"}
+{"question": "What was Apple Inc.'s net income for fiscal 2026?", "ticker": "AAPL", "year": 2026, "gold": ["132,175"], "group": "net income"}
+{"question": "What was Apple Inc.'s operating cash flow in its 2026 fiscal year?", "ticker": "AAPL", "year": 2026, "gold": ["145,097"], "group": "operating cash flow"}
+{"question": "How much cash did Apple Inc. have on hand when its 2026 fiscal year ended?", "ticker": "AAPL", "year": 2026, "gold": ["36,305"], "group": "cash"}
+{"question": "What was Apple Inc.'s total asset value when its 2026 fiscal year ended?", "ticker": "AAPL", "year": 2026, "gold": ["404,548"], "group": "total assets"}
+{"question": "What were Apple Inc.'s total liabilities at the end of fiscal 2026?", "ticker": "AAPL", "year": 2026, "gold": ["292,455"], "group": "total liabilities"}
+{"question": "What was Apple Inc.'s total shareholders' equity at the end of fiscal 2026?", "ticker": "AAPL", "year": 2026, "gold": ["112,093"], "group": "shareholders' equity"}
+{"question": "How much did AMAZON COM INC bring in from sales in fiscal 2024?", "ticker": "AMZN", "year": 2024, "gold": ["637,959"], "group": "revenue"}
+{"question": "What was AMAZON COM INC's total cost of revenue in fiscal 2024?", "ticker": "AMZN", "year": 2024, "gold": ["326,288"], "group": "cost of revenue"}
+{"question": "What was AMAZON COM INC's income from operations in its 2024 fiscal year?", "ticker": "AMZN", "year": 2024, "gold": ["68,593"], "group": "operating income"}
+{"question": "What was AMAZON COM INC's net income for fiscal 2024?", "ticker": "AMZN", "year": 2024, "gold": ["59,248"], "group": "net income"}
+{"question": "What was AMAZON COM INC's net cash from operating activities for fiscal 2024?", "ticker": "AMZN", "year": 2024, "gold": ["115,877"], "group": "operating cash flow"}
+{"question": "What were AMAZON COM INC's capital expenditures for fiscal 2024?", "ticker": "AMZN", "year": 2024, "gold": ["82,999"], "group": "capital spending"}
+{"question": "How much cash and cash equivalents did AMAZON COM INC hold at the end of fiscal 2024?", "ticker": "AMZN", "year": 2024, "gold": ["78,779"], "group": "cash"}
+{"question": "What was AMAZON COM INC's total asset value when its 2024 fiscal year ended?", "ticker": "AMZN", "year": 2024, "gold": ["624,894"], "group": "total assets"}
+{"question": "What was AMAZON COM INC's book value (stockholders' equity) at the close of fiscal 2024?", "ticker": "AMZN", "year": 2024, "gold": ["285,970"], "group": "shareholders' equity"}
+{"question": "What was AMAZON COM INC's total revenue for fiscal 2025?", "ticker": "AMZN", "year": 2025, "gold": ["716,924"], "group": "revenue"}
+{"question": "How much did it cost AMAZON COM INC to make and deliver what it sold in fiscal 2025?", "ticker": "AMZN", "year": 2025, "gold": ["356,414"], "group": "cost of revenue"}
+{"question": "How much profit did AMAZON COM INC make from operations in fiscal 2025?", "ticker": "AMZN", "year": 2025, "gold": ["79,975"], "group": "operating income"}
+{"question": "How much income tax expense did AMAZON COM INC record for fiscal 2025?", "ticker": "AMZN", "year": 2025, "gold": ["19,087"], "group": "income tax"}
+{"question": "What was AMAZON COM INC's net income for fiscal 2025?", "ticker": "AMZN", "year": 2025, "gold": ["77,670"], "group": "net income"}
+{"question": "What was AMAZON COM INC's operating cash flow in its 2025 fiscal year?", "ticker": "AMZN", "year": 2025, "gold": ["139,514"], "group": "operating cash flow"}
+{"question": "What were AMAZON COM INC's capital expenditures for fiscal 2025?", "ticker": "AMZN", "year": 2025, "gold": ["131,819"], "group": "capital spending"}
+{"question": "How much cash and cash equivalents did AMAZON COM INC hold at the end of fiscal 2025?", "ticker": "AMZN", "year": 2025, "gold": ["86,810"], "group": "cash"}
+{"question": "What was AMAZON COM INC's total asset value when its 2025 fiscal year ended?", "ticker": "AMZN", "year": 2025, "gold": ["818,042"], "group": "total assets"}
+{"question": "What was AMAZON COM INC's book value (stockholders' equity) at the close of fiscal 2025?", "ticker": "AMZN", "year": 2025, "gold": ["411,065"], "group": "shareholders' equity"}
+{"question": "How much did Alphabet Inc. bring in from sales in fiscal 2024?", "ticker": "GOOGL", "year": 2024, "gold": ["350,018"], "group": "revenue"}
+{"question": "How much did it cost Alphabet Inc. to make and deliver what it sold in fiscal 2024?", "ticker": "GOOGL", "year": 2024, "gold": ["146,306"], "group": "cost of revenue"}
+{"question": "What was Alphabet Inc.'s R&D expense for fiscal 2024?", "ticker": "GOOGL", "year": 2024, "gold": ["49,326"], "group": "research and development"}
+{"question": "What was Alphabet Inc.'s operating income for fiscal 2024?", "ticker": "GOOGL", "year": 2024, "gold": ["112,390"], "group": "operating income"}
+{"question": "How much income tax expense did Alphabet Inc. record for fiscal 2024?", "ticker": "GOOGL", "year": 2024, "gold": ["19,697"], "group": "income tax"}
+{"question": "What was Alphabet Inc.'s bottom line profit in its 2024 fiscal year?", "ticker": "GOOGL", "year": 2024, "gold": ["100,118"], "group": "net income"}
+{"question": "What was Alphabet Inc.'s operating cash flow in its 2024 fiscal year?", "ticker": "GOOGL", "year": 2024, "gold": ["125,299"], "group": "operating cash flow"}
+{"question": "How much did Alphabet Inc. invest in buildings, equipment and data centers in fiscal 2024?", "ticker": "GOOGL", "year": 2024, "gold": ["52,535"], "group": "capital spending"}
+{"question": "What was Alphabet Inc.'s cash balance at the close of fiscal 2024?", "ticker": "GOOGL", "year": 2024, "gold": ["23,466"], "group": "cash"}
+{"question": "What were Alphabet Inc.'s total assets at the end of fiscal 2024?", "ticker": "GOOGL", "year": 2024, "gold": ["450,256"], "group": "total assets"}
+{"question": "What was the sum of Alphabet Inc.'s liabilities when its 2024 fiscal year ended?", "ticker": "GOOGL", "year": 2024, "gold": ["125,172"], "group": "total liabilities"}
+{"question": "What was Alphabet Inc.'s total shareholders' equity at the end of fiscal 2024?", "ticker": "GOOGL", "year": 2024, "gold": ["325,084"], "group": "shareholders' equity"}
+{"question": "What were Alphabet Inc.'s total net sales in its 2025 fiscal year?", "ticker": "GOOGL", "year": 2025, "gold": ["402,836"], "group": "revenue"}
+{"question": "What were Alphabet Inc.'s total cost of sales for fiscal 2025?", "ticker": "GOOGL", "year": 2025, "gold": ["162,535"], "group": "cost of revenue"}
+{"question": "What was Alphabet Inc.'s R&D expense for fiscal 2025?", "ticker": "GOOGL", "year": 2025, "gold": ["61,087"], "group": "research and development"}
+{"question": "How much profit did Alphabet Inc. make from operations in fiscal 2025?", "ticker": "GOOGL", "year": 2025, "gold": ["129,039"], "group": "operating income"}
+{"question": "What was Alphabet Inc.'s provision for income taxes in fiscal 2025?", "ticker": "GOOGL", "year": 2025, "gold": ["26,656"], "group": "income tax"}
+{"question": "What was Alphabet Inc.'s net income for fiscal 2025?", "ticker": "GOOGL", "year": 2025, "gold": ["132,170"], "group": "net income"}
+{"question": "How much cash did Alphabet Inc.'s operations generate in fiscal 2025?", "ticker": "GOOGL", "year": 2025, "gold": ["164,713"], "group": "operating cash flow"}
+{"question": "How much did Alphabet Inc. invest in buildings, equipment and data centers in fiscal 2025?", "ticker": "GOOGL", "year": 2025, "gold": ["91,447"], "group": "capital spending"}
+{"question": "What was Alphabet Inc.'s cash balance at the close of fiscal 2025?", "ticker": "GOOGL", "year": 2025, "gold": ["30,708"], "group": "cash"}
+{"question": "What was Alphabet Inc.'s total asset value when its 2025 fiscal year ended?", "ticker": "GOOGL", "year": 2025, "gold": ["595,281"], "group": "total assets"}
+{"question": "What was the sum of Alphabet Inc.'s liabilities when its 2025 fiscal year ended?", "ticker": "GOOGL", "year": 2025, "gold": ["180,016"], "group": "total liabilities"}
+{"question": "What was Alphabet Inc.'s total shareholders' equity at the end of fiscal 2025?", "ticker": "GOOGL", "year": 2025, "gold": ["415,265"], "group": "shareholders' equity"}
+{"question": "What was MICROSOFT CORP's total revenue for fiscal 2025?", "ticker": "MSFT", "year": 2025, "gold": ["281,724"], "group": "revenue"}
+{"question": "What was MICROSOFT CORP's total cost of revenue in fiscal 2025?", "ticker": "MSFT", "year": 2025, "gold": ["87,831"], "group": "cost of revenue"}
+{"question": "How much gross margin, in dollars, did MICROSOFT CORP earn in fiscal 2025?", "ticker": "MSFT", "year": 2025, "gold": ["193,893"], "group": "gross profit"}
+{"question": "What were MICROSOFT CORP's research and development costs in its 2025 fiscal year?", "ticker": "MSFT", "year": 2025, "gold": ["32,488"], "group": "research and development"}
+{"question": "What was MICROSOFT CORP's income from operations in its 2025 fiscal year?", "ticker": "MSFT", "year": 2025, "gold": ["128,528"], "group": "operating income"}
+{"question": "How much income tax expense did MICROSOFT CORP record for fiscal 2025?", "ticker": "MSFT", "year": 2025, "gold": ["21,795"], "group": "income tax"}
+{"question": "What was MICROSOFT CORP's net income for fiscal 2025?", "ticker": "MSFT", "year": 2025, "gold": ["101,832"], "group": "net income"}
+{"question": "What was MICROSOFT CORP's operating cash flow in its 2025 fiscal year?", "ticker": "MSFT", "year": 2025, "gold": ["136,162"], "group": "operating cash flow"}
+{"question": "What were MICROSOFT CORP's capital expenditures for fiscal 2025?", "ticker": "MSFT", "year": 2025, "gold": ["64,551"], "group": "capital spending"}
+{"question": "How much cash and cash equivalents did MICROSOFT CORP hold at the end of fiscal 2025?", "ticker": "MSFT", "year": 2025, "gold": ["30,242"], "group": "cash"}
+{"question": "What was everything MICROSOFT CORP owned worth on its balance sheet at the end of fiscal 2025?", "ticker": "MSFT", "year": 2025, "gold": ["619,003"], "group": "total assets"}
+{"question": "What was the sum of MICROSOFT CORP's liabilities when its 2025 fiscal year ended?", "ticker": "MSFT", "year": 2025, "gold": ["275,524"], "group": "total liabilities"}
+{"question": "How much equity did MICROSOFT CORP's shareholders have when its 2025 fiscal year ended?", "ticker": "MSFT", "year": 2025, "gold": ["343,479"], "group": "shareholders' equity"}
+{"question": "What were MICROSOFT CORP's total net sales in its 2026 fiscal year?", "ticker": "MSFT", "year": 2026, "gold": ["331,839"], "group": "revenue"}
+{"question": "How much did it cost MICROSOFT CORP to make and deliver what it sold in fiscal 2026?", "ticker": "MSFT", "year": 2026, "gold": ["106,374"], "group": "cost of revenue"}
+{"question": "What was MICROSOFT CORP's revenue minus cost of revenue in fiscal 2026?", "ticker": "MSFT", "year": 2026, "gold": ["225,465"], "group": "gross profit"}
+{"question": "What were MICROSOFT CORP's research and development costs in its 2026 fiscal year?", "ticker": "MSFT", "year": 2026, "gold": ["35,562"], "group": "research and development"}
+{"question": "How much profit did MICROSOFT CORP make from operations in fiscal 2026?", "ticker": "MSFT", "year": 2026, "gold": ["155,237"], "group": "operating income"}
+{"question": "How much income tax expense did MICROSOFT CORP record for fiscal 2026?", "ticker": "MSFT", "year": 2026, "gold": ["32,185"], "group": "income tax"}
+{"question": "What was MICROSOFT CORP's bottom line profit in its 2026 fiscal year?", "ticker": "MSFT", "year": 2026, "gold": ["133,749"], "group": "net income"}
+{"question": "What was MICROSOFT CORP's net cash from operating activities for fiscal 2026?", "ticker": "MSFT", "year": 2026, "gold": ["182,935"], "group": "operating cash flow"}
+{"question": "What were MICROSOFT CORP's capital expenditures for fiscal 2026?", "ticker": "MSFT", "year": 2026, "gold": ["115,948"], "group": "capital spending"}
+{"question": "How much cash did MICROSOFT CORP have on hand when its 2026 fiscal year ended?", "ticker": "MSFT", "year": 2026, "gold": ["20,935"], "group": "cash"}
+{"question": "What was MICROSOFT CORP's total asset value when its 2026 fiscal year ended?", "ticker": "MSFT", "year": 2026, "gold": ["758,376"], "group": "total assets"}
+{"question": "What was the sum of MICROSOFT CORP's liabilities when its 2026 fiscal year ended?", "ticker": "MSFT", "year": 2026, "gold": ["315,989"], "group": "total liabilities"}
+{"question": "How much equity did MICROSOFT CORP's shareholders have when its 2026 fiscal year ended?", "ticker": "MSFT", "year": 2026, "gold": ["442,387"], "group": "shareholders' equity"}
+{"question": "How much did NVIDIA CORP bring in from sales in fiscal 2025?", "ticker": "NVDA", "year": 2025, "gold": ["130,497"], "group": "revenue"}
+{"question": "What was NVIDIA CORP's total cost of revenue in fiscal 2025?", "ticker": "NVDA", "year": 2025, "gold": ["32,639"], "group": "cost of revenue"}
+{"question": "What was NVIDIA CORP's gross profit for fiscal 2025?", "ticker": "NVDA", "year": 2025, "gold": ["97,858"], "group": "gross profit"}
+{"question": "What were NVIDIA CORP's research and development costs in its 2025 fiscal year?", "ticker": "NVDA", "year": 2025, "gold": ["12,914"], "group": "research and development"}
+{"question": "How much profit did NVIDIA CORP make from operations in fiscal 2025?", "ticker": "NVDA", "year": 2025, "gold": ["81,453"], "group": "operating income"}
+{"question": "What did NVIDIA CORP pay in income taxes, as an expense, in its 2025 fiscal year?", "ticker": "NVDA", "year": 2025, "gold": ["11,146"], "group": "income tax"}
+{"question": "How much did NVIDIA CORP earn after all expenses and taxes in fiscal 2025?", "ticker": "NVDA", "year": 2025, "gold": ["72,880"], "group": "net income"}
+{"question": "What was NVIDIA CORP's operating cash flow in its 2025 fiscal year?", "ticker": "NVDA", "year": 2025, "gold": ["64,089"], "group": "operating cash flow"}
+{"question": "What was NVIDIA CORP's total asset value when its 2025 fiscal year ended?", "ticker": "NVDA", "year": 2025, "gold": ["111,601"], "group": "total assets"}
+{"question": "What was the sum of NVIDIA CORP's liabilities when its 2025 fiscal year ended?", "ticker": "NVDA", "year": 2025, "gold": ["32,274"], "group": "total liabilities"}
+{"question": "What was NVIDIA CORP's book value (stockholders' equity) at the close of fiscal 2025?", "ticker": "NVDA", "year": 2025, "gold": ["79,327"], "group": "shareholders' equity"}
+{"question": "What were NVIDIA CORP's total net sales in its 2026 fiscal year?", "ticker": "NVDA", "year": 2026, "gold": ["215,938"], "group": "revenue"}
+{"question": "How much did it cost NVIDIA CORP to make and deliver what it sold in fiscal 2026?", "ticker": "NVDA", "year": 2026, "gold": ["62,475"], "group": "cost of revenue"}
+{"question": "How much gross margin, in dollars, did NVIDIA CORP earn in fiscal 2026?", "ticker": "NVDA", "year": 2026, "gold": ["153,463"], "group": "gross profit"}
+{"question": "What were NVIDIA CORP's research and development costs in its 2026 fiscal year?", "ticker": "NVDA", "year": 2026, "gold": ["18,497"], "group": "research and development"}
+{"question": "What was NVIDIA CORP's operating income for fiscal 2026?", "ticker": "NVDA", "year": 2026, "gold": ["130,387"], "group": "operating income"}
+{"question": "How much income tax expense did NVIDIA CORP record for fiscal 2026?", "ticker": "NVDA", "year": 2026, "gold": ["21,383"], "group": "income tax"}
+{"question": "What was NVIDIA CORP's net income for fiscal 2026?", "ticker": "NVDA", "year": 2026, "gold": ["120,067"], "group": "net income"}
+{"question": "What was NVIDIA CORP's operating cash flow in its 2026 fiscal year?", "ticker": "NVDA", "year": 2026, "gold": ["102,718"], "group": "operating cash flow"}
+{"question": "How much cash did NVIDIA CORP have on hand when its 2026 fiscal year ended?", "ticker": "NVDA", "year": 2026, "gold": ["10,605"], "group": "cash"}
+{"question": "What were NVIDIA CORP's total assets at the end of fiscal 2026?", "ticker": "NVDA", "year": 2026, "gold": ["206,803"], "group": "total assets"}
+{"question": "What was the sum of NVIDIA CORP's liabilities when its 2026 fiscal year ended?", "ticker": "NVDA", "year": 2026, "gold": ["49,510"], "group": "total liabilities"}
+{"question": "What was NVIDIA CORP's total shareholders' equity at the end of fiscal 2026?", "ticker": "NVDA", "year": 2026, "gold": ["157,293"], "group": "shareholders' equity"}

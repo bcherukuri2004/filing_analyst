@@ -24,6 +24,7 @@ class Question:
     ticker: str
     year: int
     gold: list[str]
+    group: str = ""  # the kind of question, e.g. "revenue", for the breakdown
 
 
 def load_questions(path: str) -> list[Question]:
@@ -36,7 +37,8 @@ def load_questions(path: str) -> list[Question]:
             d = json.loads(line)
             if not d.get("gold"):
                 raise ValueError(f"{path}:{n}: every question needs at least one gold string")
-            out.append(Question(d["question"], d["ticker"].upper(), int(d["year"]), [str(g) for g in d["gold"]]))
+            out.append(Question(d["question"], d["ticker"].upper(), int(d["year"]), [str(g) for g in d["gold"]],
+                                str(d.get("group", ""))))
     return out
 
 
@@ -55,13 +57,18 @@ def score_ranking(hits: list[Hit], q: Question, k: int) -> tuple[bool, float]:
 def evaluate(questions: list[Question], search: Callable[[str], list[Hit]], k: int) -> dict:
     found, rr, n = 0, 0.0, len(questions)
     misses = []
+    by_group: dict[str, list[int]] = {}  # group: [found, asked]
     for q in questions:
         ok, r = score_ranking(search(q.question), q, k)
         found += ok
         rr += r
+        g = by_group.setdefault(q.group, [0, 0])
+        g[0] += ok
+        g[1] += 1
         if not ok:
             misses.append(q.question)
-    return {"n": n, f"recall@{k}": found / n if n else 0.0, f"mrr@{k}": rr / n if n else 0.0, "misses": misses}
+    return {"n": n, f"recall@{k}": found / n if n else 0.0, f"mrr@{k}": rr / n if n else 0.0, "misses": misses,
+            "by_group": {g: (f, a) for g, (f, a) in by_group.items()}}
 
 
 def run_eval(path: str, store: Store | PgStore, embedder: Embedder, k: int = 5, with_rerank: bool = True,
@@ -96,6 +103,15 @@ def run_eval(path: str, store: Store | PgStore, embedder: Embedder, k: int = 5, 
         res["setup"] = name
         rows.append(res)
         log(f"{name:<34} {res[f'recall@{k}']:>9.3f} {res[f'mrr@{k}']:>9.3f}")
+    groups = sorted({q.group for q in questions if q.group})
+    if groups:
+        # One average can hide a whole kind of question failing, so show each kind.
+        short = ["keyword", "vector", "hybrid", "+filter", "+rerank"][:len(rows)]
+        log(f"\nrecall@{k} by kind of question\n")
+        log(f"{'kind':<26} {'n':>3} " + " ".join(f"{s:>8}" for s in short))
+        for g in groups:
+            asked = rows[0]["by_group"][g][1]
+            log(f"{g:<26} {asked:>3} " + " ".join(f"{r['by_group'][g][0] / asked:>8.2f}" for r in rows))
     return rows
 
 
