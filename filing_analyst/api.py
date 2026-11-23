@@ -12,7 +12,7 @@ Endpoints:
     POST /ask      a written answer with checked citations (needs ANTHROPIC_API_KEY)
 
 Settings, read from environment variables when the server starts:
-    FILING_ANALYST_INDEX           index folder (default "index")
+    FILING_ANALYST_INDEX           index folder (default "index"), or a postgresql:// address
     FILING_ANALYST_RERANK          set to 0 to skip loading the reranker
     ANTHROPIC_API_KEY              turns on /ask
     FILING_ANALYST_API_KEY         if set, /search and /ask need it in an X-API-Key header
@@ -119,6 +119,7 @@ class Health(BaseModel):
     reranker: bool
     ask_enabled: bool
     auth_required: bool
+    store: str  # "sqlite" or "postgres"; never the address, which can hold a password
 
 
 # ------------------------------------------------------------ settings and protection
@@ -237,12 +238,11 @@ def _load_from_environment(state: _State) -> None:
     """Load the index and models once, when the server starts. Loading takes
     seconds; a search takes milliseconds, so it must not happen per request."""
     from .embed import FastEmbedder
-    from .store import Store
+    from .store import open_store
 
-    folder = os.environ.get("FILING_ANALYST_INDEX", "index")
-    store = Store(folder)
+    store = open_store(os.environ.get("FILING_ANALYST_INDEX", "index"))
     if store.count() == 0:
-        raise RuntimeError(f"The index in '{folder}' is empty. Run: python -m filing_analyst ingest <folder>")
+        raise RuntimeError(f"The index in '{store.location}' is empty. Run: python -m filing_analyst ingest <folder>")
     reranker = None
     if os.environ.get("FILING_ANALYST_RERANK", "1") != "0":
         from .retrieve import CrossEncoderReranker
@@ -254,7 +254,7 @@ def _load_from_environment(state: _State) -> None:
 
         state.llm = AnthropicLLM()
     log.info("loaded %d passages from %s; reranker=%s; ask=%s",
-             store.count(), folder, reranker is not None, state.llm is not None)
+             store.count(), store.location, reranker is not None, state.llm is not None)
 
 
 def create_app(retriever: Retriever | None = None, llm: LLM | None = None, *, api_key: str | None = None,
@@ -316,7 +316,8 @@ def create_app(retriever: Retriever | None = None, llm: LLM | None = None, *, ap
         with lock:
             passages, embedder = r.store.count(), r.store.embedder_name()
         return Health(status="ok", passages=passages, embedder=embedder, reranker=r.reranker is not None,
-                      ask_enabled=state.llm is not None, auth_required=expected is not None)
+                      ask_enabled=state.llm is not None, auth_required=expected is not None,
+                      store=r.store.kind)
 
     @app.post("/search", response_model=SearchResponse, dependencies=[Depends(require_key)])
     def search(req: SearchRequest) -> SearchResponse:

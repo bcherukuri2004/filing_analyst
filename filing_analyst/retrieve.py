@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .embed import Embedder
-from .store import Hit, Store
+from .store import Hit, PgStore, Store
 
 RRF_K = 60  # standard constant for reciprocal rank fusion
 POOL = 50  # how many results each method contributes before merging
@@ -97,7 +97,7 @@ def rrf(lists: list[list[Hit]], k: int = RRF_K) -> list[Hit]:
 
 
 class Retriever:
-    def __init__(self, store: Store, embedder: Embedder | None = None, reranker: Reranker | None = None):
+    def __init__(self, store: Store | PgStore, embedder: Embedder | None = None, reranker: Reranker | None = None):
         self.store = store
         self.embedder = embedder
         self.reranker = reranker

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from .embed import Embedder
 from .retrieve import Retriever
-from .store import Hit, Store
+from .store import Hit, PgStore, Store
 
 
 @dataclass
@@ -64,7 +64,7 @@ def evaluate(questions: list[Question], search: Callable[[str], list[Hit]], k: i
     return {"n": n, f"recall@{k}": found / n if n else 0.0, f"mrr@{k}": rr / n if n else 0.0, "misses": misses}
 
 
-def run_eval(path: str, store: Store, embedder: Embedder, k: int = 5, with_rerank: bool = True,
+def run_eval(path: str, store: Store | PgStore, embedder: Embedder, k: int = 5, with_rerank: bool = True,
              log: Callable[[str], None] = print) -> list[dict]:
     questions = load_questions(path)
     # A question whose gold text is nowhere in its filing cannot be graded fairly
@@ -79,8 +79,9 @@ def run_eval(path: str, store: Store, embedder: Embedder, k: int = 5, with_reran
 
         reranker = CrossEncoderReranker()
     r = Retriever(store, embedder, reranker)
+    ranking = "ts_rank" if store.kind == "postgres" else "BM25"  # how each store ranks keyword matches
     setups = [
-        ("keyword search only (BM25)", dict(mode="bm25", rerank=False, use_filters=False)),
+        (f"keyword search only ({ranking})", dict(mode="bm25", rerank=False, use_filters=False)),
         ("vector search only", dict(mode="dense", rerank=False, use_filters=False)),
         ("hybrid (keyword + vector)", dict(mode="hybrid", rerank=False, use_filters=False)),
         ("hybrid + company/year filter", dict(mode="hybrid", rerank=False, use_filters=True)),

@@ -7,7 +7,8 @@ dependencies = ["beautifulsoup4", "lxml", "numpy", "fastembed", "anthropic", "re
 
 [project.optional-dependencies]
 api = ["fastapi", "uvicorn"]
-dev = ["pytest", "httpx", "fastapi", "uvicorn"]  # httpx powers FastAPI's test client
+postgres = ["psycopg[binary]", "pgvector"]
+dev = ["pytest", "httpx", "fastapi", "uvicorn", "psycopg[binary]", "pgvector"]  # httpx powers FastAPI's test client
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

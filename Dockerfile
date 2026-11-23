@@ -22,7 +22,7 @@ WORKDIR /app
 # reused when only the code changes.
 COPY pyproject.toml README.md ./
 RUN mkdir filing_analyst && touch filing_analyst/__init__.py \
- && pip install ".[api]" \
+ && pip install ".[api,postgres]" \
  && pip uninstall -y filing_analyst && rm -rf filing_analyst build *.egg-info
 
 # Download both models now, while building, so the container starts without

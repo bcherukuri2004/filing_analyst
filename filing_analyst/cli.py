@@ -5,7 +5,7 @@ import argparse
 import os
 import sys
 
-from .store import Store
+from .store import open_store
 
 DEFAULT_INDEX = "index"
 
@@ -34,15 +34,15 @@ def _show_hits(hits, width: int = 300) -> None:
 def cmd_ingest(args) -> None:
     from .ingest import ingest_folder
 
-    store = Store(args.index)
+    store = open_store(args.index)
     n = ingest_folder(args.folder, store, _embedder())
-    print(f"Indexed {n} passages into {args.index}/")
+    print(f"Indexed {n} passages into {store.location}")
 
 
 def cmd_search(args) -> None:
     from .retrieve import Retriever
 
-    store = Store(args.index)
+    store = open_store(args.index)
     needs_dense = args.mode in ("dense", "hybrid")
     r = Retriever(store, _embedder() if needs_dense else None, _reranker(not args.no_rerank))
     hits, filters = r.search(args.question, k=args.k, mode=args.mode, rerank=not args.no_rerank,
@@ -58,7 +58,7 @@ def cmd_ask(args) -> None:
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Set ANTHROPIC_API_KEY first. (The search command works without one.)")
-    store = Store(args.index)
+    store = open_store(args.index)
     r = Retriever(store, _embedder(), _reranker(not args.no_rerank))
     hits, filters = r.search(args.question, k=args.k, rerank=not args.no_rerank)
     ans = answer_question(args.question, hits, AnthropicLLM())
@@ -78,12 +78,12 @@ def cmd_ask(args) -> None:
 def cmd_eval(args) -> None:
     from .evaluate import run_eval
 
-    run_eval(args.questions, Store(args.index), _embedder(), args.k, with_rerank=not args.no_rerank)
+    run_eval(args.questions, open_store(args.index), _embedder(), args.k, with_rerank=not args.no_rerank)
 
 
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="filing_analyst", description="Ask questions about SEC 10-K filings.")
-    p.add_argument("--index", default=DEFAULT_INDEX, help="folder for the search index (default: index)")
+    p.add_argument("--index", default=DEFAULT_INDEX, help="folder for the search index, or a postgresql:// address (default: index)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("ingest", help="parse and index the filings in a folder")

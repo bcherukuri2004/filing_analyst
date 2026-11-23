@@ -18,6 +18,10 @@ services:
       # The index made by `python -m filing_analyst ingest`, read-only.
       - "${FILING_ANALYST_INDEX_DIR:-./index}:/data/index:ro"
     environment:
+      # Where the container reads the index: the mounted folder by default, or
+      # the db service below, e.g. postgresql://filing:<password>@db:5432/filing
+      # (inside Docker the database is "db" on port 5432, not 127.0.0.1:5433).
+      FILING_ANALYST_INDEX: ${FILING_ANALYST_CONTAINER_INDEX:-/data/index}
       FILING_ANALYST_API_KEY: ${FILING_ANALYST_API_KEY:-}
       FILING_ANALYST_ASK_PER_MINUTE: ${FILING_ANALYST_ASK_PER_MINUTE:-10}
       FILING_ANALYST_ASK_GLOBAL_PER_MINUTE: ${FILING_ANALYST_ASK_GLOBAL_PER_MINUTE:-60}
@@ -33,3 +37,35 @@ services:
     cap_drop:
       - ALL
     restart: unless-stopped
+
+  # Optional Postgres + pgvector store. Only started when asked for:
+  #
+  #   docker compose --profile postgres up -d db
+  #
+  # Then point the app at it with
+  #   FILING_ANALYST_INDEX=postgresql://filing:<password>@127.0.0.1:5433/filing
+  db:
+    profiles: ["postgres"]
+    image: pgvector/pgvector:0.8.2-pg17-trixie
+    ports:
+      - "127.0.0.1:${FILING_ANALYST_DB_PORT:-5433}:5432"  # this machine only; 5433 so it cannot clash with a Postgres already installed on 5432
+    environment:
+      POSTGRES_USER: filing
+      POSTGRES_DB: filing
+      # Required: set it in .env. If it is missing, Postgres refuses to start
+      # (it never runs without a password). The default is empty rather than an
+      # error so that the app alone still starts without this setting.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filing -d filing"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  pgdata:
