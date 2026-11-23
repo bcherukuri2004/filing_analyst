@@ -34,7 +34,7 @@ from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 from .answer import LLM, answer_question
@@ -113,8 +113,9 @@ class AskResponse(BaseModel):
 
 
 class Health(BaseModel):
-    status: str
-    passages: int
+    status: str  # "ok", or "unavailable" (with HTTP 503) when the database cannot be reached
+    database: str  # "reachable" or "unreachable"
+    passages: int | None  # None when the database cannot be reached
     embedder: str | None
     reranker: bool
     ask_enabled: bool
@@ -310,21 +311,49 @@ def create_app(retriever: Retriever | None = None, llm: LLM | None = None, *, ap
             raise HTTPException(503, "The search index is not loaded.")
         return state.retriever
 
+    def with_store(r: Retriever, work):
+        """Run `work` (which uses the store), surviving a lost database connection.
+
+        If the connection was lost (the database restarted, or the network
+        blipped), reconnect once and try again, so callers never notice a
+        blip. If the database is really down, answer 503 with a plain message.
+        Only "connection lost" errors are handled here: any other error is a
+        real bug and is left to show up as one. The caller holds the lock."""
+        lost = getattr(r.store, "unavailable_errors", ())
+        try:
+            return work()
+        except lost as e:
+            log.warning("database connection lost (%s); reconnecting", type(e).__name__)
+        try:
+            r.store.reconnect()
+            return work()
+        except (*lost, ConnectionError) as e:  # reconnect() says "still down" with ConnectionError
+            # Only the error's type goes to the log: its text can hold the address.
+            log.warning("database still unreachable (%s)", type(e).__name__)
+            raise HTTPException(503, "The database is unreachable right now. Try again shortly.") from None
+
     @app.get("/health", response_model=Health)
-    def health() -> Health:
+    def health(response: Response) -> Health:
+        # Answers 503 while the database is unreachable, so whatever watches the
+        # service (Docker, Kubernetes) stops sending it traffic until it is back.
         r = loaded_retriever()
-        with lock:
-            passages, embedder = r.store.count(), r.store.embedder_name()
-        return Health(status="ok", passages=passages, embedder=embedder, reranker=r.reranker is not None,
-                      ask_enabled=state.llm is not None, auth_required=expected is not None,
-                      store=r.store.kind)
+        status, database, passages, embedder = "ok", "reachable", None, None
+        try:
+            with lock:
+                passages, embedder = with_store(r, lambda: (r.store.count(), r.store.embedder_name()))
+        except HTTPException:
+            status, database = "unavailable", "unreachable"
+            response.status_code = 503
+        return Health(status=status, database=database, passages=passages, embedder=embedder,
+                      reranker=r.reranker is not None, ask_enabled=state.llm is not None,
+                      auth_required=expected is not None, store=r.store.kind)
 
     @app.post("/search", response_model=SearchResponse, dependencies=[Depends(require_key)])
     def search(req: SearchRequest) -> SearchResponse:
         r = loaded_retriever()
         with lock:
-            hits, filters = r.search(req.question, k=req.k, mode=req.mode, rerank=req.rerank,
-                                     use_filters=req.use_filters)
+            hits, filters = with_store(r, lambda: r.search(req.question, k=req.k, mode=req.mode,
+                                                           rerank=req.rerank, use_filters=req.use_filters))
         results = [
             Passage(rank=i, label=h.label, ticker=h.ticker, company=h.company, fiscal_year=h.fiscal_year,
                     item=h.item, section=h.section, kind=h.kind, text=h.text, score=h.score)
@@ -356,7 +385,7 @@ def create_app(retriever: Retriever | None = None, llm: LLM | None = None, *, ap
                 raise
         r = loaded_retriever()
         with lock:
-            hits, _ = r.search(req.question, k=req.k)
+            hits, _ = with_store(r, lambda: r.search(req.question, k=req.k))
         try:
             ans = answer_question(req.question, hits, state.llm)
         except Exception:

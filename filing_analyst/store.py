@@ -124,6 +124,17 @@ class Store:
         self._emb: np.ndarray | None = None
         self._ids: np.ndarray | None = None
 
+    # A file on this machine cannot become unreachable the way a database
+    # server can, so no error counts as "the database is away" and there is
+    # nothing to reconnect.
+    unavailable_errors: tuple[type[BaseException], ...] = ()
+
+    def ping(self) -> None:
+        self.db.execute("SELECT 1")
+
+    def reconnect(self) -> None:
+        pass
+
     # ---- writing ----
     def replace_all(self, chunks: list[Chunk], vectors: np.ndarray, embedder_name: str) -> None:
         check_input(chunks, vectors)
@@ -248,26 +259,55 @@ class PgStore:
 
     def __init__(self, url: str):
         import psycopg
+
+        # Errors that mean the server or the connection to it went away (a
+        # restart, a network blip), as opposed to a mistake in a query.
+        # InterfaceError covers using a connection that is already closed.
+        self.unavailable_errors = (psycopg.OperationalError, psycopg.InterfaceError, ConnectionError)
+        self.location = describe_location(url)
+        self._url = url  # kept only to reconnect; never shown (use self.location)
+        self.db = self._open()
+        self.db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+        self.db.execute(self._chunks_table(None).replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"))
+
+    def _open(self):
+        """A new connection with this store's settings."""
+        import psycopg
         from psycopg.rows import dict_row
 
-        self.location = describe_location(url)
+        url = self._url
         try:
-            self.db = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+            db = psycopg.connect(url, autocommit=True, row_factory=dict_row)
         except psycopg.Error as e:
             # The driver's message can repeat parts of the address; never the password.
-            message = f"Could not connect to Postgres at {self.location}: {str(e).strip()}"
+            message = f"Could not connect to Postgres at {describe_location(url)}: {str(e).strip()}"
             password = urlsplit(url).password or dict(parse_qsl(urlsplit(url).query)).get("password")
             if password:
                 message = message.replace(password, "***")
             raise ConnectionError(message) from None
-        self.db.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        db.execute("CREATE EXTENSION IF NOT EXISTS vector")
         from pgvector.psycopg import register_vector
 
-        register_vector(self.db)
-        self.db.execute("SET hnsw.ef_search = %d" % self.EF_SEARCH)
-        self.db.execute("SET hnsw.iterative_scan = relaxed_order")
-        self.db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
-        self.db.execute(self._chunks_table(None).replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"))
+        register_vector(db)
+        # Session settings: they belong to this connection, so a new one needs them again.
+        db.execute("SET hnsw.ef_search = %d" % self.EF_SEARCH)
+        db.execute("SET hnsw.iterative_scan = relaxed_order")
+        return db
+
+    def ping(self) -> None:
+        """Raise one of unavailable_errors if the database cannot be reached."""
+        self.db.execute("SELECT 1")
+
+    def reconnect(self) -> None:
+        """Replace the connection, for example after the database restarted.
+        Raises ConnectionError (password hidden) if it is still unreachable;
+        the old connection is then kept, so a later call can try again."""
+        new = self._open()
+        old, self.db = self.db, new
+        try:
+            old.close()
+        except Exception:  # noqa: BLE001  (it is already broken; closing is a courtesy)
+            pass
 
     @staticmethod
     def _chunks_table(dim: int | None) -> str:

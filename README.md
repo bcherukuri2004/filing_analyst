@@ -89,7 +89,7 @@ can be tried from the browser.
 
 | Endpoint | What it does |
 |---|---|
-| `GET /health` | Is the server up, how many passages are loaded, is the reranker loaded, is `/ask` on, is a key required. Always open, so monitoring can reach it |
+| `GET /health` | Is the server up, can it reach the database (`"database": "reachable"`), how many passages are loaded, is the reranker loaded, is `/ask` on, is a key required. Answers 503 with `"database": "unreachable"` while the database is down. Always open, so monitoring can reach it |
 | `POST /search` | The best matching passages for a question. No model cost |
 | `POST /ask` | A written answer with checked citations. Needs `ANTHROPIC_API_KEY`; without it, returns 503. Rate limited per client and in total |
 
@@ -306,6 +306,13 @@ Details that matter:
   more than 40 rows) can quietly return fewer rows than asked for. The store turns
   on pgvector's iterative scans, which keep looking. A test forces Postgres to use
   the index on 3,000 rows and checks the counts.
+- **It survives a database restart.** If the connection is lost, the server
+  reconnects once and retries, so a short blip goes unnoticed. While the
+  database is really down, `/health` and `/search` answer 503 with a plain
+  message instead of crashing, and the server recovers by itself when the
+  database is back; no restart needed. Tested by stopping the real database
+  container under a running server, and by cutting the connection from inside
+  Postgres in the test suite.
 - **Passwords never show.** Logs, messages and `/health` show the address as
   `postgresql://filing:***@...`. `/health` only says `"store": "postgres"`.
 - **Bad input is refused before anything is deleted**: vectors with NaN or
