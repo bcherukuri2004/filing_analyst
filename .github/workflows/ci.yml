@@ -92,7 +92,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data
-          key: filings-${{ hashFiles('eval/questions.jsonl') }}
+          key: filings-${{ hashFiles('eval/questions_wide.jsonl') }}
       - if: env.SEC_USER_AGENT != ''
         run: pip install -e .
       - name: Download the filings
@@ -103,4 +103,4 @@ jobs:
         run: python -m filing_analyst ingest data
       - name: Run the eval and check the gate
         if: env.SEC_USER_AGENT != ''
-        run: python -m filing_analyst eval eval/questions.jsonl --gate eval/gate.json
+        run: python -m filing_analyst eval eval/questions_wide.jsonl --gate eval/gate.json
