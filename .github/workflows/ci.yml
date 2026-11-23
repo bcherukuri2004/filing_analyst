@@ -1,0 +1,106 @@
+# Runs on every push to main and every pull request.
+#
+#   tests      the whole test suite, on the oldest and newest supported Python,
+#              with a real Postgres + pgvector database for the Postgres tests.
+#   eval-gate  downloads the real 10-K filings, builds the index and fails if
+#              search quality drops below eval/gate.json. The SEC asks every
+#              program to identify itself, so this job needs a repository
+#              secret SEC_USER_AGENT ("Your Name you@example.com"). Without it
+#              the job explains that and stops, rather than failing.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read  # nothing here needs to write to the repository
+
+concurrency:  # a newer push cancels the older run of the same branch
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FASTEMBED_CACHE_PATH: ${{ github.workspace }}/.models
+  HF_HUB_DISABLE_TELEMETRY: "1"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg17-trixie
+        env:
+          POSTGRES_USER: filing
+          POSTGRES_PASSWORD: ci-only-throwaway  # a database that exists only for this run
+          POSTGRES_DB: filing_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U filing -d filing_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      FILING_ANALYST_TEST_PG: postgresql://filing:ci-only-throwaway@127.0.0.1:5432/filing_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Cache the embedding and reranking models
+        uses: actions/cache@v4
+        with:
+          path: .models
+          key: models-bge-small-en-v1.5-ms-marco-minilm-v1
+      - run: pip install -e ".[dev]"
+      - name: Run the tests
+        run: pytest -q -rs  # -rs lists anything skipped, and why
+
+  eval-gate:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+    steps:
+      - name: Explain a skipped gate
+        if: env.SEC_USER_AGENT == ''
+        run: |
+          echo "::notice title=Eval gate skipped::Add a repository secret SEC_USER_AGENT (\"Your Name you@example.com\") to run the eval on real filings."
+      - uses: actions/checkout@v4
+        if: env.SEC_USER_AGENT != ''
+      - uses: actions/setup-python@v5
+        if: env.SEC_USER_AGENT != ''
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Cache the models
+        if: env.SEC_USER_AGENT != ''
+        uses: actions/cache@v4
+        with:
+          path: .models
+          key: models-bge-small-en-v1.5-ms-marco-minilm-v1
+      - name: Cache the filings (so the SEC is asked once, not on every run)
+        if: env.SEC_USER_AGENT != ''
+        id: filings
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: filings-${{ hashFiles('eval/questions.jsonl') }}
+      - if: env.SEC_USER_AGENT != ''
+        run: pip install -e .
+      - name: Download the filings
+        if: env.SEC_USER_AGENT != '' && steps.filings.outputs.cache-hit != 'true'
+        run: python scripts/download_filings.py data AAPL MSFT NVDA GOOGL AMZN --years 2
+      - name: Build the index
+        if: env.SEC_USER_AGENT != ''
+        run: python -m filing_analyst ingest data
+      - name: Run the eval and check the gate
+        if: env.SEC_USER_AGENT != ''
+        run: python -m filing_analyst eval eval/questions.jsonl --gate eval/gate.json

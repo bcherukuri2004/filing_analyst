@@ -1,0 +1,7 @@
+{
+  "min_questions": 35,
+  "setups": {
+    "vector search only": {"recall@5": 0.95, "mrr@5": 0.75},
+    "hybrid + filter + reranker": {"recall@5": 0.70, "mrr@5": 0.35}
+  }
+}

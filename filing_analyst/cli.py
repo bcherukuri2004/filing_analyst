@@ -78,7 +78,19 @@ def cmd_ask(args) -> None:
 def cmd_eval(args) -> None:
     from .evaluate import run_eval
 
-    run_eval(args.questions, open_store(args.index), _embedder(), args.k, with_rerank=not args.no_rerank)
+    if args.gate:
+        from .evaluate import check_gate, load_gate
+
+        gate = load_gate(args.gate)  # check the gate file before spending minutes on the eval
+    rows = run_eval(args.questions, open_store(args.index), _embedder(), args.k, with_rerank=not args.no_rerank)
+    if args.gate:
+        problems = check_gate(rows, gate)
+        if problems:
+            print("\nGate FAILED:")
+            for p in problems:
+                print("  -", p)
+            sys.exit(1)
+        print(f"\nGate passed ({args.gate}).")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -108,6 +120,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("questions")
     s.add_argument("-k", type=int, default=5)
     s.add_argument("--no-rerank", action="store_true", help="skip the reranker rows")
+    s.add_argument("--gate", help="a gate file of minimum scores; exit with an error if any is missed")
     s.set_defaults(fn=cmd_eval)
 
     args = p.parse_args(argv)

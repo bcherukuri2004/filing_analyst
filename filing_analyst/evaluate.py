@@ -97,3 +97,55 @@ def run_eval(path: str, store: Store | PgStore, embedder: Embedder, k: int = 5, 
         rows.append(res)
         log(f"{name:<34} {res[f'recall@{k}']:>9.3f} {res[f'mrr@{k}']:>9.3f}")
     return rows
+
+
+# ------------------------------------------------------------ the gate
+# A gate file says how good search must be, for example:
+#
+#   {"min_questions": 35,
+#    "setups": {"vector search only": {"recall@5": 0.95, "mrr@5": 0.75}}}
+#
+# `eval --gate gate.json` exits with an error if any line is missed, which is
+# what makes CI fail when a change makes search worse.
+
+def load_gate(path: str) -> dict:
+    """Read a gate file, refusing one that is malformed or checks nothing."""
+    try:
+        with open(path) as f:
+            gate = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{path} is not valid JSON: {e}") from None
+    if not isinstance(gate, dict):
+        raise ValueError(f"{path} must hold a JSON object")
+    n = gate.get("min_questions")
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise ValueError(f"{path}: min_questions must be a whole number of at least 1")
+    setups = gate.get("setups")
+    if not isinstance(setups, dict) or not setups or not all(isinstance(m, dict) and m for m in setups.values()):
+        raise ValueError(f"{path}: a gate that checks nothing would always pass; list setups and their minimums")
+    for setup, minimums in setups.items():
+        for metric, value in minimums.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+                raise ValueError(f"{path}: {setup} {metric} must be a number between 0 and 1, got {value!r}")
+    return gate
+
+
+def check_gate(rows: list[dict], gate: dict) -> list[str]:
+    """Every way the results miss the gate, or an empty list if they pass."""
+    problems = []
+    by_setup = {r["setup"]: r for r in rows}
+    graded = min((r["n"] for r in rows), default=0)
+    if graded < gate["min_questions"]:
+        problems.append(f"only {graded} question{'s' if graded != 1 else ''} could be graded, "
+                        f"the gate needs {gate['min_questions']} (did parsing break?)")
+    for setup, minimums in gate["setups"].items():
+        row = by_setup.get(setup)
+        if row is None:
+            problems.append(f"the gate checks '{setup}', which this eval did not run")
+            continue
+        for metric, minimum in minimums.items():
+            if metric not in row:
+                problems.append(f"the gate checks {metric} for '{setup}', which this eval did not report")
+            elif row[metric] < minimum:
+                problems.append(f"{setup}: {metric} is {row[metric]:.3f}, the gate needs at least {minimum}")
+    return problems
