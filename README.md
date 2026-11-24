@@ -214,55 +214,80 @@ How it behaves under load and errors:
 
 ## Running in Docker
 
-The container holds the code, its packages and both models, so it runs the same
-on any machine with Docker and needs no Python setup. It does not hold the search
-index or any keys: the index is mounted from your machine read-only, and keys are
-passed in when it starts.
+One command starts the whole service in three containers:
 
-Build the index once (see Setup), then:
+| Container | What it does |
+|---|---|
+| `db` | Postgres 17 with pgvector. Holds the search index in a volume named `pgdata` |
+| `ingest` | A one time step: builds the index from `./data` into the database, then exits. If the database already holds an index made with the current model, it does nothing |
+| `api` | The web API. Starts only after the database is healthy and the ingest step has finished |
+
+The image holds the code, its packages and both models, so it runs the same on
+any machine with Docker and needs no Python setup. It holds no index, no
+filings and no keys.
+
+Download the filings once (see Setup), put a database password in `.env`, then:
 
 ```
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
 docker compose up --build -d          # or: docker-compose up --build -d
 curl -s localhost:8000/health
 docker compose logs -f                # watch it
-docker compose down                   # stop and remove it
+docker compose down                   # stop it (the index stays in the volume)
+docker compose down --volumes         # stop it and delete the index too
 ```
 
-The first build takes a few minutes (packages and about 150 MB of models). Later
-builds reuse those steps and take seconds unless `pyproject.toml` changes.
+Measured on a MacBook (Apple silicon, Docker in Colima with 4 CPUs and 4 GB):
+
+| What | Measured |
+|---|---|
+| Image size | 894 MB on disk, 276 MB compressed (what a download moves) |
+| First start on an empty database, until `/health` answers | 274 seconds (almost all of it embedding the 2,960 passages) |
+| Every later start, until `/health` answers | 8.0 to 8.5 seconds (three restarts; the index is already built) |
+| API memory just after start, with both models loaded | about 270 MB |
+| Database password in any log | 0 times |
 
 **Keys and settings.** Put them in a file named `.env` next to
 `docker-compose.yml`, which Compose reads automatically and git ignores:
 
 ```
+POSTGRES_PASSWORD=<required: letters and digits>
 FILING_ANALYST_API_KEY=<a long random key, see "Protecting it">
 ANTHROPIC_API_KEY=<only if you want /ask>
 FILING_ANALYST_ASK_PER_MINUTE=10
 FILING_ANALYST_ASK_GLOBAL_PER_MINUTE=60
 ```
 
-Also available: `FILING_ANALYST_PORT` (default 8000), `FILING_ANALYST_INDEX_DIR`
-(default `./index`) and `FILING_ANALYST_RERANK`. Keys are never written into the
+Without `POSTGRES_PASSWORD`, Compose refuses to start and says why. The app
+gets the password through Postgres's own `PGPASSWORD` setting, so the database
+address never contains it. Also available: `FILING_ANALYST_PORT` (default
+8000), `FILING_ANALYST_DB_PORT` (default 5433), `FILING_ANALYST_DATA_DIR`
+(default `./data`) and `FILING_ANALYST_RERANK`. Keys are never written into the
 image, so the image can be shared without sharing them.
 
-**Updating the data.** Run `ingest` again on your machine, then
-`docker compose restart`. No rebuild is needed, because the index is not part of
-the image.
+**Updating the data.** Download new filings into `./data`, then rebuild the
+index on purpose (a plain `up` would keep the old one):
 
-How the container is locked down:
+```
+docker compose run --rm ingest python -m filing_analyst ingest /data/filings
+docker compose restart api
+```
+
+How the containers are locked down:
 
 | Setting | What it means |
 |---|---|
-| Port published as `127.0.0.1:8000` | Only this machine can connect. Change it only after setting `FILING_ANALYST_API_KEY` |
-| Index mounted `:ro` | The app cannot change or damage the index |
-| Runs as user `app` (uid 10001), not root | A break-in into the app gets very little |
+| Ports published as `127.0.0.1` only | Only this machine can connect, to the API and to the database. Open the API further only after setting `FILING_ANALYST_API_KEY` |
+| Filings mounted read only, into the ingest step only | Nothing can change them, and the API has no files mounted at all |
+| Runs as user `app` (uid 10001), not root | A break in through the app gets very little |
 | `read_only: true`, only `/tmp` writable | The app cannot change its own files |
 | `no-new-privileges`, `cap_drop: ALL` | It cannot gain extra powers after starting |
 | `HF_HUB_OFFLINE=1`, models inside the image | It never downloads anything while running |
-| Health check on `/health` | `docker ps` shows `healthy`, not just `running` |
+| Health check on `/health` | `docker ps` shows `healthy`, and `unhealthy` while the database is unreachable |
 
-The image is about 870 MB, mostly the model runtime (onnxruntime), numpy and the
-models themselves.
+The image size is mostly the two models (152 MB) and the libraries that run
+them (onnxruntime and numpy, about 130 MB). Trimming the rest would save around
+5%, so it is left as is.
 
 ## Using Postgres instead of SQLite
 
@@ -272,23 +297,25 @@ extension**. Everything else (search, answers, the eval, the API) works the same
 on either, because both stores have the same methods. One setting picks the store:
 a folder means SQLite, and a `postgresql://` address means Postgres.
 
+Docker Compose runs it this way already (see "Running in Docker"). To use the
+same database from your machine, without the containers for the app:
+
 ```
 pip install -e ".[postgres]"
-echo "POSTGRES_PASSWORD=$(python -c 'import secrets; print(secrets.token_urlsafe(18))')" >> .env
-docker compose --profile postgres up -d db        # Postgres 17 + pgvector, on 127.0.0.1:5433
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+docker compose up -d db                           # Postgres 17 + pgvector, on 127.0.0.1:5433
 
-export PG="postgresql://filing:<the password>@127.0.0.1:5433/filing"
-python -m filing_analyst --index "$PG" ingest data
-python -m filing_analyst --index "$PG" search "NVIDIA revenue 2026"
-FILING_ANALYST_INDEX="$PG" uvicorn filing_analyst.api:app --port 8000
+export FILING_ANALYST_INDEX="postgresql://filing@127.0.0.1:5433/filing"
+export PGPASSWORD="<the password>"                # Postgres reads it from here
+python -m filing_analyst ingest data
+python -m filing_analyst search "NVIDIA revenue 2026"
+uvicorn filing_analyst.api:app --port 8000
 ```
 
-The database uses port **5433**, not the usual 5432, so it cannot clash with a
-Postgres already installed on your machine. To run the API container against it,
-set `FILING_ANALYST_CONTAINER_INDEX=postgresql://filing:<password>@db:5432/filing`
-in `.env` (inside Docker the database is called `db`) and run
-`docker compose --profile postgres up -d`. Without `--profile postgres` the
-database is not started at all.
+Every command reads the index address from `FILING_ANALYST_INDEX` (or from
+`--index`), so a password never has to be typed on a command line, where other
+programs on the machine can read it. The database uses port **5433**, not the
+usual 5432, so it cannot clash with a Postgres already installed on your machine.
 
 How the Postgres store works:
 
@@ -525,7 +552,7 @@ The Postgres half runs when `FILING_ANALYST_TEST_PG` names a database with "test
 in its name (the tests wipe it), and is skipped otherwise:
 
 ```
-docker compose --profile postgres exec db psql -U filing -c "CREATE DATABASE filing_test"
+docker compose exec db psql -U filing -c "CREATE DATABASE filing_test"
 FILING_ANALYST_TEST_PG="postgresql://filing:<password>@127.0.0.1:5433/filing_test" pytest
 ```
 
@@ -535,13 +562,18 @@ Container tests are slow (they build the image) and only run when asked:
 RUN_DOCKER_TESTS=1 pytest tests/test_docker.py -v
 ```
 
-They build and start the container with a throwaway key and the real index, then
-check: `/health` sees the mounted index, `/search` works with the key and is
-refused without it, Docker reports it healthy, it does not run as root, the index
-is mounted read-only and a write is refused, the port is published to
-`127.0.0.1` only, no keys or local files (`.venv`, `.git`, `data`, `.env`) are in
-the image, and a copy with no network at all can still load both models. Everything
-is removed afterwards, pass or fail.
+They start the whole stack on a fresh, empty database, with a throwaway key and
+a throwaway database password, on their own ports, then check: the ingest step
+built the index and exited cleanly, `/health` reports the database reachable and
+the same passage count as indexing `./data` directly, `/search` works with the key
+and is refused without it, Docker reports the API healthy, it does not run as
+root, the filings are mounted read only into the ingest step and the API has
+nothing mounted, the password is in no log and no database address, both ports
+are published to `127.0.0.1` only, no keys or local files (`.venv`, `.git`,
+`data`, `.env`) are in the image, a copy with no network at all can still load
+both models, Compose refuses to start without a database password, and a full
+stop and start keeps the index and skips the rebuild. Everything is removed
+afterwards, pass or fail.
 
 The sample filings in `tests/fixtures.py` are **fictional** companies with
 invented numbers. They imitate the awkward parts of real EDGAR files but are not

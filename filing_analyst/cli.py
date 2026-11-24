@@ -10,6 +10,13 @@ from .store import open_store
 DEFAULT_INDEX = "index"
 
 
+def default_index() -> str:
+    """The FILING_ANALYST_INDEX setting if there is one, else the "index" folder.
+    A postgresql:// address can hold a password, and a setting keeps it off
+    the command line, where other programs on the machine can read it."""
+    return os.environ.get("FILING_ANALYST_INDEX") or DEFAULT_INDEX
+
+
 def _embedder():
     from .embed import FastEmbedder
 
@@ -35,6 +42,16 @@ def cmd_ingest(args) -> None:
     from .ingest import ingest_folder
 
     store = open_store(args.index)
+    if args.if_empty:
+        from .embed import DEFAULT_MODEL
+
+        have = store.count()
+        # Skip only if the index was made with the model used to search it;
+        # vectors from another model would not match the questions.
+        if have and store.embedder_name() == DEFAULT_MODEL:
+            print(f"The index in {store.location} already has {have} passages; nothing to do. "
+                  "(Run without --if-empty to rebuild it.)")
+            return
     n = ingest_folder(args.folder, store, _embedder())
     print(f"Indexed {n} passages into {store.location}")
 
@@ -95,11 +112,15 @@ def cmd_eval(args) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="filing_analyst", description="Ask questions about SEC 10-K filings.")
-    p.add_argument("--index", default=DEFAULT_INDEX, help="folder for the search index, or a postgresql:// address (default: index)")
+    p.add_argument("--index", default=default_index(),
+                   help="folder for the search index, or a postgresql:// address "
+                        "(default: the FILING_ANALYST_INDEX setting, else the folder 'index')")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("ingest", help="parse and index the filings in a folder")
     s.add_argument("folder")
+    s.add_argument("--if-empty", action="store_true",
+                   help="do nothing if the index already holds passages made with the current model")
     s.set_defaults(fn=cmd_ingest)
 
     s = sub.add_parser("search", help="show the best matching passages (no API key needed)")
@@ -124,7 +145,10 @@ def main(argv: list[str] | None = None) -> None:
     s.set_defaults(fn=cmd_eval)
 
     args = p.parse_args(argv)
-    args.fn(args)
+    try:
+        args.fn(args)
+    except ConnectionError as e:  # an unreachable database: one plain line, password already hidden
+        sys.exit(str(e))
 
 
 if __name__ == "__main__":

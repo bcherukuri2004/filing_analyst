@@ -25,10 +25,13 @@ def _normalize(m: np.ndarray) -> np.ndarray:
     return (m / norms).astype(np.float32)
 
 
+DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"  # the embedding model the index is built with
+
+
 class FastEmbedder:
     """BAAI/bge-small-en-v1.5 through the fastembed library (runs on CPU)."""
 
-    def __init__(self, model: str = "BAAI/bge-small-en-v1.5"):
+    def __init__(self, model: str = DEFAULT_MODEL):
         from fastembed import TextEmbedding
 
         self.name = model
