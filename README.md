@@ -664,7 +664,24 @@ pull request:
 | Job | What it does |
 |---|---|
 | `tests` | The whole suite on Python 3.10 and 3.12, with a real Postgres + pgvector database beside it, so the Postgres tests run too. Models are cached between runs |
+| `docker-smoke` | Builds the Docker image and starts the whole stack (Postgres, the ingest step, the API) on a fresh database with three small fictional filings, then checks `/health`, `/health/live` and `/search` (with and without the key) and that the API does not run as root. It runs `scripts/docker_smoke.sh`, which runs the same on a laptop |
 | `eval-gate` | Downloads the 10 real filings (cached, so the SEC is asked once), builds the index and runs the eval with the gate. A change that makes search worse fails the build |
+
+The smoke test runs beside the gate and changes nothing about it. A test
+(`tests/test_ci_workflow.py`) pins the gate's job, its command and its minimum
+scores, which may be raised but never lowered.
+
+Run the smoke test yourself (needs Docker; it removes everything it started,
+pass or fail, and never calls `/ask`):
+
+```
+scripts/docker_smoke.sh
+```
+
+On a Mac with the image already built it passed every check in 10 seconds. A
+planted wrong answer made it exit with an error, name the failed check, print
+the container logs and still clean up. It has not yet run on GitHub: that
+happens on the first push that includes it.
 
 The SEC asks every program that downloads filings to identify itself with a name
 and email. The gate job reads them from a repository secret, which stays private

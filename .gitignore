@@ -6,3 +6,4 @@ __pycache__/
 # Keys and settings for docker compose. Never commit these.
 .env
 .env.*
+.smoke.*/
