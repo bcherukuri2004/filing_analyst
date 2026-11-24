@@ -1,0 +1,14 @@
+# Settings that are not secret. Secrets (the database password and the API
+# key) are in the Secret "filing-analyst-secrets", which k8s/up.sh creates
+# with fresh random values; it is never written to a file or to git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filing-analyst-config
+  namespace: filing-analyst
+data:
+  # No password in the address: Postgres reads it from PGPASSWORD (the Secret).
+  FILING_ANALYST_INDEX: postgresql://filing@postgres:5432/filing
+  FILING_ANALYST_RERANK: "1"
+  FILING_ANALYST_ASK_PER_MINUTE: "10"
+  FILING_ANALYST_ASK_GLOBAL_PER_MINUTE: "60"

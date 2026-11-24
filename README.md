@@ -90,6 +90,7 @@ can be tried from the browser.
 | Endpoint | What it does |
 |---|---|
 | `GET /health` | Is the server up, can it reach the database (`"database": "reachable"`), how many passages are loaded, is the reranker loaded, is `/ask` on, is a key required. Answers 503 with `"database": "unreachable"` while the database is down. Always open, so monitoring can reach it |
+| `GET /health/live` | Only says the process is alive (`{"status": "alive"}`) and never touches the database. For Kubernetes liveness checks, so a database outage takes pods out of traffic instead of restarting them. Always open |
 | `POST /search` | The best matching passages for a question. No model cost |
 | `POST /ask` | A written answer with checked citations. Needs `ANTHROPIC_API_KEY`; without it, returns 503. Rate limited per client and in total |
 
@@ -288,6 +289,82 @@ How the containers are locked down:
 The image size is mostly the two models (152 MB) and the libraries that run
 them (onnxruntime and numpy, about 130 MB). Trimming the rest would save around
 5%, so it is left as is.
+
+## Running on Kubernetes (on your laptop)
+
+The same image runs on a small Kubernetes cluster made with
+[kind](https://kind.sigs.k8s.io/), which runs Kubernetes inside Docker. kind
+was picked over minikube because it needs nothing but Docker, starts in about a
+minute, loads local images directly (`kind load docker-image`), and is what many
+projects use to test Kubernetes setups in CI.
+
+What runs (all in the namespace `filing-analyst`, files in `k8s/`):
+
+| Kubernetes object | What it is here |
+|---|---|
+| Deployment `api`, 2 replicas | Two copies of the web API. Updates replace one pod at a time and never go below 2 ready copies (`maxUnavailable: 0`) |
+| Service `api` (NodePort 30080) | One address for both copies; reachable as `http://127.0.0.1:8080` on this machine only |
+| StatefulSet `postgres` with a 1 GB persistent volume | Postgres with pgvector. The index survives the database pod being deleted |
+| Job `ingest` | Builds the index once from `./data`, then stops; does nothing if the index is already there |
+| ConfigMap `filing-analyst-config` | Settings that are not secret |
+| Secret `filing-analyst-secrets` | The database password and the API key, made by `k8s/up.sh` with fresh random values; never in a file or in git |
+
+Health checks:
+
+| Check | Uses | What happens when it fails |
+|---|---|---|
+| Startup | `/health/live` | Liveness waits until the models have loaded |
+| Readiness | `/health` (checks the database) | The pod stops getting traffic, and is **not** restarted |
+| Liveness | `/health/live` (never touches the database) | The pod is restarted |
+
+Readiness and liveness are split on purpose: if the database goes down, both
+API pods leave the Service and wait, instead of being restarted over and over
+(a restart cannot fix the database). When the database is back, they return by
+themselves.
+
+Commands (needs Docker, `brew install kind kubernetes-cli`, and the filings in
+`./data`):
+
+```
+k8s/up.sh                       # build image v1, create the cluster, start everything
+curl -s 127.0.0.1:8080/health
+kubectl --context kind-filing-analyst -n filing-analyst get pods
+
+# the API key, to call /search (it is only kept in the cluster)
+export FILING_ANALYST_API_KEY=$(kubectl --context kind-filing-analyst -n filing-analyst \
+  get secret filing-analyst-secrets -o jsonpath='{.data.FILING_ANALYST_API_KEY}' | base64 -d)
+
+python k8s/loadtest.py --seconds 90          # steady searches; reports every failure
+k8s/update.sh v2                             # rolling update to a new image version
+k8s/down.sh                                  # delete the cluster and everything in it
+```
+
+To repeat the failover test, run the load test in one terminal and, about 20
+seconds in, delete one API pod in another:
+
+```
+kubectl --context kind-filing-analyst -n filing-analyst delete pod <one of the api pods>
+```
+
+Measured on a MacBook (Apple silicon, Docker in Colima with 4 CPUs and 4 GB),
+with `k8s/loadtest.py` sending searches 2 at a time (reranker off, about 60
+searches a second):
+
+| Test | Result |
+|---|---|
+| Both API replicas healthy | 2 of 2 ready, 0 restarts, running as user 10001 (not root); requests spread over both pods (10 and 12 of 22) |
+| Delete one API pod during the load test (3 runs) | **0 failed** of 5,477, 5,462 and 5,489 searches; the replacement pod was ready after **4.7, 4.6 and 3.1 seconds** |
+| Rolling update v1 to v2 during the load test | **0 failed** of 5,348 searches; finished in **9.3 seconds**; `/health` answers moved from v1 to v2 |
+| Rolling update v2 to v3 during the load test | **0 failed** of 3,516 searches; finished in **6.3 seconds** |
+| Postgres stopped for 40 seconds | both API pods went not ready with **0 restarts**; both ready again **7.5 seconds** after Postgres was back, with all 2,960 passages |
+| First start: index built by the Job | about 4 minutes (the Job's own duration: 4 minutes 5 seconds) |
+
+While **both** API pods are out of traffic (the database outage above), a caller
+gets a refused connection rather than a 503, because the Service has no pod to
+send it to.
+
+Not measured: memory per pod (kind has no metrics server by default), and
+anything with the reranker on under load.
 
 ## Using Postgres instead of SQLite
 

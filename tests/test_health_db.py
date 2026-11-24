@@ -195,3 +195,30 @@ def test_postgres_that_stays_down_gives_503_without_the_password(pg_client):
     with pytest.raises(ConnectionError) as e:
         pg.reconnect()
     assert "Sup3rSecretPw" not in str(e.value) and "***" in str(e.value)
+
+
+# ------------------------------------------------------------ liveness
+
+def test_live_says_alive_even_while_the_database_is_down(flaky):
+    # Kubernetes restarts a pod whose liveness check fails. A restart cannot fix
+    # the database, so this check must stay green during a database outage.
+    store, client = flaky
+    store.down = True
+    r = client.get("/health/live")
+    assert r.status_code == 200 and r.json() == {"status": "alive"}
+    assert store.reconnects == 0  # it never touches the database at all
+    assert client.get("/health").status_code == 503  # while readiness says "no traffic"
+
+
+def test_live_needs_no_key(retriever):
+    client = TestClient(create_app(retriever=retriever, api_key="k" * 32))
+    assert client.get("/health/live").status_code == 200
+    assert client.post("/search", json={"question": "revenue"}).status_code == 401
+
+
+def test_health_reports_the_version_it_was_built_as(retriever, monkeypatch):
+    # During a rolling update this shows which version answered.
+    monkeypatch.setenv("FILING_ANALYST_VERSION", "v2")
+    assert TestClient(create_app(retriever=retriever)).get("/health").json()["version"] == "v2"
+    monkeypatch.delenv("FILING_ANALYST_VERSION")
+    assert TestClient(create_app(retriever=retriever)).get("/health").json()["version"] == "dev"

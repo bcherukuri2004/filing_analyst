@@ -1,0 +1,66 @@
+# Postgres 17 with pgvector, as a StatefulSet: one pod with a stable name
+# (postgres-0) and its own persistent volume, so the index survives the pod
+# being deleted or moved.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: filing-analyst
+spec:
+  clusterIP: None  # "headless": the name postgres points straight at the pod
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: filing-analyst
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:0.8.2-pg17-trixie
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: filing
+            - name: POSTGRES_DB
+              value: filing
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: filing-analyst-secrets
+                  key: PGPASSWORD
+            - name: PGDATA  # a folder inside the volume, as the Postgres image recommends
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "filing", "-d", "filing"]
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

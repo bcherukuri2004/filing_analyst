@@ -1,0 +1,18 @@
+# A one node Kubernetes cluster that runs inside Docker, made by `kind`.
+# k8s/up.sh fills in FILINGS_DIR with the full path of ./data.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: filing-analyst
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # The app's Service listens on port 30080 inside the cluster; this makes it
+      # http://127.0.0.1:8080 on this machine, and only on this machine.
+      - containerPort: 30080
+        hostPort: 8080
+        listenAddress: "127.0.0.1"
+    extraMounts:
+      # The downloaded filings, so the ingest Job can read them (read only).
+      - hostPath: FILINGS_DIR
+        containerPath: /filings
+        readOnly: true

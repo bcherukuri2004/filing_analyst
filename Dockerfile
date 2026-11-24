@@ -37,9 +37,15 @@ RUN pip install --no-deps . && rm -rf build *.egg-info
 # From here on, never look for model updates online.
 ENV HF_HUB_OFFLINE=1
 
+# The version this image was built as, shown by /health (for example during a
+# rolling update): docker build --build-arg FILING_ANALYST_VERSION=v2 .
+ARG FILING_ANALYST_VERSION=dev
+ENV FILING_ANALYST_VERSION=$FILING_ANALYST_VERSION
+
 # Run as an ordinary user, not root.
-RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
-USER app
+RUN groupadd --gid 10001 app && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app
+# By number, not name, so Kubernetes can check it is not root (runAsNonRoot).
+USER 10001:10001
 
 EXPOSE 8000
 

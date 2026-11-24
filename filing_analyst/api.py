@@ -121,6 +121,7 @@ class Health(BaseModel):
     ask_enabled: bool
     auth_required: bool
     store: str  # "sqlite" or "postgres"; never the address, which can hold a password
+    version: str  # the image version it was built as ("dev" outside an image)
 
 
 # ------------------------------------------------------------ settings and protection
@@ -332,6 +333,14 @@ def create_app(retriever: Retriever | None = None, llm: LLM | None = None, *, ap
             log.warning("database still unreachable (%s)", type(e).__name__)
             raise HTTPException(503, "The database is unreachable right now. Try again shortly.") from None
 
+    @app.get("/health/live")
+    def live() -> dict:
+        """Is this process alive and answering? Used for Kubernetes liveness:
+        a failure there restarts the pod. It never touches the database,
+        because restarting the app cannot fix a database outage; /health
+        (readiness) covers that by taking the pod out of traffic instead."""
+        return {"status": "alive"}
+
     @app.get("/health", response_model=Health)
     def health(response: Response) -> Health:
         # Answers 503 while the database is unreachable, so whatever watches the
@@ -346,7 +355,8 @@ def create_app(retriever: Retriever | None = None, llm: LLM | None = None, *, ap
             response.status_code = 503
         return Health(status=status, database=database, passages=passages, embedder=embedder,
                       reranker=r.reranker is not None, ask_enabled=state.llm is not None,
-                      auth_required=expected is not None, store=r.store.kind)
+                      auth_required=expected is not None, store=r.store.kind,
+                      version=os.environ.get("FILING_ANALYST_VERSION", "dev"))
 
     @app.post("/search", response_model=SearchResponse, dependencies=[Depends(require_key)])
     def search(req: SearchRequest) -> SearchResponse:

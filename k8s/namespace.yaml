@@ -1,0 +1,6 @@
+# Everything for this app lives in its own namespace, so it can be listed or
+# deleted in one go: kubectl delete namespace filing-analyst
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: filing-analyst

@@ -1,0 +1,43 @@
+# Builds the search index into Postgres once, then stops. With --if-empty it
+# does nothing if the index is already there, so running it again is safe.
+# If Postgres is not ready yet, the run fails and Kubernetes retries it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ingest
+  namespace: filing-analyst
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001   # the image's own user, by number
+        runAsGroup: 10001
+      containers:
+        - name: ingest
+          image: filing-analyst:v1
+          imagePullPolicy: Never  # the image is loaded into the cluster by k8s/up.sh
+          command: ["python", "-m", "filing_analyst", "ingest", "/data/filings", "--if-empty"]
+          envFrom:
+            - configMapRef: {name: filing-analyst-config}
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: {name: filing-analyst-secrets, key: PGPASSWORD}
+          volumeMounts:
+            - {name: filings, mountPath: /data/filings, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {memory: 2Gi}
+      volumes:
+        - name: filings
+          hostPath: {path: /filings, type: Directory}
+        - name: tmp
+          emptyDir: {}
